@@ -2,7 +2,7 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-lab--demo-orange)
 ![Platform](https://img.shields.io/badge/platform-Cisco%20IP%20Phones-lightgrey)
-![Version](https://img.shields.io/badge/version-0.2.0-dev-blue)
+![Version](https://img.shields.io/badge/version-0.2.0--dev-blue)
 
 # Cisco IP Phone Self-Service Framework
 

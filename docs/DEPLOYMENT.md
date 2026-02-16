@@ -61,7 +61,7 @@ Edit `.env` as needed:
 Create a dedicated non-login system user:
 
 ``` bash
-sudo useradd --system              --no-create-home              --shell /usr/sbin/nologin              phone-services
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin phone-services
 ```
 
 Create the persistent data directory:
@@ -72,8 +72,36 @@ sudo chown phone-services:phone-services /var/lib/phone-services
 sudo chmod 750 /var/lib/phone-services
 ```
 
-Application code lives in `/opt/phone-services`. Persistent state
-(SQLite database) lives in `/var/lib/phone-services`.
+This directory stores the SQLite database file (tickets.db).
+It must exist before the service is started.
+
+The database file itself is created automatically on first launch.
+
+The directory is persistent across reboots. The database file is not stored alongside application code.
+
+Application code lives in `/opt/phone-services`.
+
+------------------------------------------------------------------------
+
+## 5.1 Database Initialization and Migrations
+
+The application uses a SQLite database located at:
+
+    /var/lib/phone-services/tickets.db
+
+The application performs additive schema migrations automatically at startup.
+
+On first launch, the database and required tables are created.
+On subsequent launches, missing columns are added if required
+(e.g., audit fields introduced in newer versions).
+
+Before upgrading between versions, it is recommended to back up
+the database file.
+
+```bash
+sudo cp /var/lib/phone-services/tickets.db \
+        /var/lib/phone-services/tickets.db.bak.$(date +%F)
+```
 
 ------------------------------------------------------------------------
 

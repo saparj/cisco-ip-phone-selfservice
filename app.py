@@ -1,4 +1,3 @@
-APP_VERSION = "0.2.0-dev"
 from flask import Flask, Response, request
 import sqlite3
 from datetime import datetime
@@ -9,15 +8,19 @@ import os
 from dotenv import load_dotenv
 import json
 
+APP_VERSION = "0.2.0-dev"
+
 load_dotenv()
 
 app = Flask(__name__)
 
 DB_PATH = Path(os.getenv("DB_PATH", Path(__file__).with_name("tickets.db")))
-
-# IMPORTANT: set to how phones reach your Nginx (no port, since Nginx is on 80)
 BASE_URL = os.getenv("BASE_URL", "http://example.local")
 
+def _existing_columns(con, table_name: str) -> set[str]:
+    rows = con.execute(f"PRAGMA table_info({table_name})").fetchall()
+    # PRAGMA table_info: (cid, name, type, notnull, dflt_value, pk)
+    return {r[1] for r in rows}
 
 def init_db():
     with sqlite3.connect(DB_PATH) as con:
@@ -36,6 +39,19 @@ def init_db():
         )
         con.execute("CREATE INDEX IF NOT EXISTS idx_requests_created ON requests(created_at)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status)")
+
+        # v0.2.0 schema upgrades (idempotent)
+        cols = _existing_columns(con, "requests")
+        if "updated_at" not in cols:
+            con.execute("ALTER TABLE requests ADD COLUMN updated_at TEXT")
+        if "approved_by" not in cols:
+            con.execute("ALTER TABLE requests ADD COLUMN approved_by TEXT")
+        if "approved_at" not in cols:
+            con.execute("ALTER TABLE requests ADD COLUMN approved_at TEXT")
+        if "completed_at" not in cols:
+            con.execute("ALTER TABLE requests ADD COLUMN completed_at TEXT")
+        if "rejected_reason" not in cols:
+            con.execute("ALTER TABLE requests ADD COLUMN rejected_reason TEXT")
 
 init_db()
 
@@ -209,9 +225,6 @@ def phone_submit_dnlabel():
         return xml_response(xml)
 
     pt = DEFAULT_PT
-    lineLabel = requested_name
-    callerId = requested_name
-    desc = requested_name
 
     source_ip = request.headers.get("X-Real-IP", request.remote_addr)
     user_agent = request.headers.get("User-Agent", "")
@@ -220,16 +233,30 @@ def phone_submit_dnlabel():
 
     with sqlite3.connect(DB_PATH) as con:
         cur = con.cursor()
+
+        now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
         cur.execute(
-            "INSERT INTO requests(created_at, source_ip, user_agent, kind, details) VALUES(?,?,?,?,?)",
+            """
+            INSERT INTO requests(
+                created_at,
+                updated_at,
+                source_ip,
+                user_agent,
+                kind,
+                details
+            ) VALUES(?,?,?,?,?,?)
+            """,
             (
-                datetime.utcnow().isoformat(timespec="seconds") + "Z",
+                now,
+                now,
                 source_ip,
                 user_agent,
                 "PHONE_NAME_UPDATE",
                 details,
             ),
         )
+
         rid = cur.lastrowid
 
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -288,7 +315,7 @@ def health():
     try:
         with sqlite3.connect(DB_PATH) as con:
             con.execute("SELECT 1")
-    except Exception as e:
+    except Exception:
         db_status = "error"
         status = "degraded"
 
@@ -307,5 +334,4 @@ def health():
 
 
 if __name__ == "__main__":
-    init_db()
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=8000)

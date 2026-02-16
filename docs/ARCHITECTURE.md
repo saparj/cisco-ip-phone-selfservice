@@ -50,7 +50,7 @@ Key Endpoints: - /phone/menu - /phone/phonename/info - /phone/dnlabel -
 
 ### 5. SQLite Database
 
--   Local file: tickets.db
+-   Local file: /var/lib/phone-services/tickets.db
 -   Stores:
     -   id
     -   created_at
@@ -59,6 +59,11 @@ Key Endpoints: - /phone/menu - /phone/phonename/info - /phone/dnlabel -
     -   kind
     -   details
     -   status
+    -   updated_at
+    -   approved_by
+    -   approved_at
+    -   completed_at
+    -   rejected_reason
 
 ------------------------------------------------------------------------
 

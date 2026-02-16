@@ -110,23 +110,70 @@ sudo systemctl start phone-services
 
 ## 7. Nginx Reverse Proxy Configuration
 
-Example server block:
+Create the site config file:
+
+``` bash
+sudo nano /etc/nginx/sites-available/phone-services
+```
+
+Paste the server{...} block into that file:
 
 ``` nginx
 server {
     listen 80;
-    server_name example.local;
+    server_name _;
 
+    # Basic hardening
+    server_tokens off;
+
+    # Phone services (Cisco IP Phone XML)
     location /phone/ {
+        gzip off;
         proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Phones are sensitive to caching sometimes
+        add_header Cache-Control "no-store";
+    }
+
+    # Admin portal
+    location /admin/ {
+        proxy_pass http://127.0.0.1:8000;
         proxy_http_version 1.1;
-        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Health endpoint
+    location /health/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # If you want everything else to 404:
+    location / {
+        return 404;
     }
 }
+```
+
+Enable the site:
+
+``` bash
+sudo ln -s /etc/nginx/sites-available/phone-services /etc/nginx/sites-enabled/phone-services
+```
+
+Disable the default site (optional but common):
+
+``` bash
+sudo rm -f /etc/nginx/sites-enabled/default
 ```
 
 Validate and reload Nginx:
@@ -150,6 +197,7 @@ Test locally:
 
 ``` bash
 curl http://127.0.0.1:8000/phone/menu
+curl http://127.0.0.1:8000/health
 ```
 
 ------------------------------------------------------------------------

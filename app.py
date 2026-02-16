@@ -1,3 +1,4 @@
+APP_VERSION = "0.2.0-dev"
 from flask import Flask, Response, request
 import sqlite3
 from datetime import datetime
@@ -6,6 +7,7 @@ from werkzeug.exceptions import HTTPException
 import html
 import os
 from dotenv import load_dotenv
+import json
 
 load_dotenv()
 
@@ -276,6 +278,32 @@ def admin_list():
     for r in rows:
         lines.append(f"{r[0]} | {r[1]} | {r[2]} | {r[3]} | {r[4]} | {r[5]}")
     return "<pre>" + "\n".join(lines) + "</pre>"
+
+
+@app.get("/health")
+def health():
+    status = "ok"
+    db_status = "ok"
+
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            con.execute("SELECT 1")
+    except Exception as e:
+        db_status = "error"
+        status = "degraded"
+
+    payload = {
+        "status": status,
+        "version": APP_VERSION,
+        "db": db_status,
+        "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }
+
+    return Response(
+        json.dumps(payload),
+        status=200 if status == "ok" else 503,
+        content_type="application/json",
+    )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtualenv
+.venv/
+venv/
+
+# Local DB + runtime
+tickets.db
+*.db
+gunicorn.ctl
+*.log
+.env
+
+# OS/editor
+.DS_Store
+.vscode/

@@ -1,40 +1,94 @@
 # Deployment Guide
 
-## Overview
-
-This project provides Cisco IP Phone XML services for:
-
--   Request Phone Name Update workflow
--   My Recent Requests directory
--   Service exit handling via CiscoIPPhoneExecute
--   Admin review portal
-
-See ARCHITECTURE.md for system design overview.
+This document describes how to deploy the Cisco IP Phone Self-Service
+Framework using Nginx, Gunicorn, and systemd on a Linux host.
 
 ------------------------------------------------------------------------
 
-# Server Environment
+## 1. Install System Dependencies
 
--   OS: Raspberry Pi OS (Debian-based)
--   Python venv: `.venv`
--   App path: `/opt/phone-services`
--   Port exposed to phones: `80`
--   Internal app bind: `127.0.0.1:8000`
+``` bash
+sudo apt update
+sudo apt install python3 python3-venv python3-pip nginx
+```
 
 ------------------------------------------------------------------------
 
-# systemd Service Configuration
+## 2. Application Directory
+
+Application code should reside in:
+
+    /opt/phone-services
+
+Create the directory and set ownership to your development user:
+
+``` bash
+sudo mkdir -p /opt/phone-services
+sudo chown -R $USER:$USER /opt/phone-services
+```
+
+------------------------------------------------------------------------
+
+## 3. Python Virtual Environment
+
+``` bash
+cd /opt/phone-services
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+deactivate
+```
+
+------------------------------------------------------------------------
+
+## 4. Environment Configuration
+
+Copy the example configuration file:
+
+``` bash
+cp .env.example .env
+```
+
+Edit `.env` as needed:
+
+    BASE_URL=http://example.local
+    DB_PATH=/var/lib/phone-services/tickets.db
+
+------------------------------------------------------------------------
+
+## 5. Create Service Account and Data Directory
+
+Create a dedicated non-login system user:
+
+``` bash
+sudo useradd --system              --no-create-home              --shell /usr/sbin/nologin              phone-services
+```
+
+Create the persistent data directory:
+
+``` bash
+sudo mkdir -p /var/lib/phone-services
+sudo chown phone-services:phone-services /var/lib/phone-services
+sudo chmod 750 /var/lib/phone-services
+```
+
+Application code lives in `/opt/phone-services`. Persistent state
+(SQLite database) lives in `/var/lib/phone-services`.
+
+------------------------------------------------------------------------
+
+## 6. systemd Service Configuration
 
 File: `/etc/systemd/system/phone-services.service`
 
 ``` ini
 [Unit]
-Description=Phone Services (Flask/Gunicorn)
+Description=Cisco IP Phone Self-Service (Flask/Gunicorn)
 After=network.target
 
 [Service]
-User=xroot
-WorkingDirectory=/opt/phone-services/
+User=phone-services
+WorkingDirectory=/opt/phone-services
 Environment="PATH=/opt/phone-services/.venv/bin"
 ExecStart=/opt/phone-services/.venv/bin/gunicorn -w 2 -b 127.0.0.1:8000 app:app
 Restart=always
@@ -44,108 +98,9 @@ RestartSec=3
 WantedBy=multi-user.target
 ```
 
-### Notes
-
--   2 Gunicorn workers
--   Bound to localhost only (security best practice)
--   Auto-restarts on crash
--   Runs under non-root user
-
-------------------------------------------------------------------------
-
-# Nginx Configuration
-
-File: `/etc/nginx/sites-available/phone-services`
-
-``` nginx
-server {
-    listen 80;
-    server_name _;
-
-    server_tokens off;
-
-    location /phone/ {
-        gzip off;
-        proxy_pass http://127.0.0.1:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        add_header Cache-Control "no-store";
-    }
-
-    location /admin/ {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location / {
-        return 404;
-    }
-}
-```
-
-### Notes
-
--   gzip disabled for `/phone/` (Cisco XML compatibility)
--   Reverse proxy to Gunicorn on localhost
--   Caching disabled for phone endpoints
--   Everything else returns 404
-
-------------------------------------------------------------------------
-
-# Deployment Commands
-
-## Restart Application
+Enable and start the service:
 
 ``` bash
-sudo systemctl restart phone-services
-```
-
-## Check Application Status
-
-``` bash
-sudo systemctl status phone-services
-```
-
-## View Application Logs
-
-``` bash
-sudo journalctl -u phone-services -f
-```
-
-## Reload Nginx
-
-``` bash
-sudo systemctl reload nginx
-```
-
-## Check Nginx Config
-
-``` bash
-sudo nginx -t
-```
-
-------------------------------------------------------------------------
-
-# First-Time Setup
-
-``` bash
-cd /opt/phone-services
-
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Create environment configuration
-cp .env.example .env
-
 sudo systemctl daemon-reload
 sudo systemctl enable phone-services
 sudo systemctl start phone-services
@@ -153,42 +108,55 @@ sudo systemctl start phone-services
 
 ------------------------------------------------------------------------
 
-# Security Considerations
+## 7. Nginx Reverse Proxy Configuration
 
--   Gunicorn bound to localhost only
--   Nginx acts as reverse proxy
--   No external exposure of app port
--   SQLite stored locally
--   No credentials stored in repo (future AXL/Unity integrations should
-    use environment variables)
+Example server block:
+
+``` nginx
+server {
+    listen 80;
+    server_name example.local;
+
+    location /phone/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+    }
+}
+```
+
+Validate and reload Nginx:
+
+``` bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
 
 ------------------------------------------------------------------------
 
-# Troubleshooting
+## 8. Verification
 
-### XML Parse Error on Phone
+Check service status:
 
--   Ensure gzip is disabled in Nginx
--   Ensure `Content-Type: text/xml`
--   Validate XML via curl
+``` bash
+sudo systemctl status phone-services --no-pager
+```
 
-### 502 Bad Gateway
+Test locally:
 
--   Check `journalctl -u phone-services`
--   Ensure Gunicorn workers are running
-
-### 504 Timeout
-
--   Check upstream connectivity
--   Confirm Gunicorn bind is `127.0.0.1:8000`
+``` bash
+curl http://127.0.0.1:8000/phone/menu
+```
 
 ------------------------------------------------------------------------
 
-# Future Improvements
+## Notes
 
--   TLS termination
--   Admin authentication
--   Role-based approval workflow
--   Structured JSON storage instead of flat details
--   CUCM AXL automation
--   Unity Connection REST integration
+-   Service runs under a dedicated non-root account.
+-   Gunicorn binds to localhost only (`127.0.0.1`).
+-   Nginx handles external HTTP access.
+-   Application state is separated from application code.

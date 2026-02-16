@@ -50,3 +50,7 @@ This repository is provided as a lab/demo reference architecture for engineers b
 - [Deployment](docs/DEPLOYMENT.md)
 - [Production Readiness](docs/PRODUCTION_READINESS.md)
 - [Risk Matrix](docs/RISK_MATRIX.md)
+
+## Security
+
+Please review the [Security Policy](SECURITY.md) for vulnerability reporting guidelines.

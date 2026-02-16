@@ -90,7 +90,14 @@ After=network.target
 User=phone-services
 WorkingDirectory=/opt/phone-services
 Environment="PATH=/opt/phone-services/.venv/bin"
-ExecStart=/opt/phone-services/.venv/bin/gunicorn -w 2 -b 127.0.0.1:8000 app:app
+
+# Create /run/phone-services at service start (tmpfs; recreated on reboot)
+RuntimeDirectory=phone-services
+RuntimeDirectoryMode=0750
+
+# Gunicorn 25.x may create a control socket; place it in /run with proper perms
+ExecStart=/opt/phone-services/.venv/bin/gunicorn --control-socket /run/phone-services/gunicorn.ctl -w 2 -b 127.0.0.1:8000 app:app
+
 Restart=always
 RestartSec=3
 

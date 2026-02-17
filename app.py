@@ -17,6 +17,32 @@ app = Flask(__name__)
 DB_PATH = Path(os.getenv("DB_PATH", Path(__file__).with_name("tickets.db")))
 BASE_URL = os.getenv("BASE_URL", "http://example.local")
 
+# --- Workflow states (v0.2.0) ---
+
+STATUS_PENDING = "Pending"
+STATUS_APPROVED = "Approved"
+STATUS_REJECTED = "Rejected"
+STATUS_COMPLETED = "Completed"
+
+ALLOWED_TRANSITIONS = {
+    STATUS_PENDING: {STATUS_APPROVED, STATUS_REJECTED},
+    STATUS_APPROVED: {STATUS_COMPLETED},
+    STATUS_REJECTED: set(),
+    STATUS_COMPLETED: set(),
+}
+
+VALID_STATUSES = set(ALLOWED_TRANSITIONS.keys())
+
+def _can_transition(current_status: str, target: str) -> bool:
+    return target in ALLOWED_TRANSITIONS.get(current_status, set())
+
+def utc_now() -> str:
+    return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+def current_actor() -> str:
+    # Provided by nginx basic auth via proxy_set_header
+    return request.headers.get("X-Remote-User") or "unknown"
+
 def _existing_columns(con, table_name: str) -> set[str]:
     rows = con.execute(f"PRAGMA table_info({table_name})").fetchall()
     # PRAGMA table_info: (cid, name, type, notnull, dflt_value, pk)
@@ -56,10 +82,72 @@ def init_db():
 init_db()
 
 
+def _apply_transition(
+    request_id: int,
+    target_status: str,
+    actor: str,
+    reject_reason: str | None = None,
+) -> tuple[bool, str]:
+    """
+    Returns (ok, message). Writes status + audit fields atomically.
+    """
+
+    if target_status not in VALID_STATUSES:
+        return False, f"Invalid target status: {target_status}"
+
+    now = utc_now()
+
+    with sqlite3.connect(DB_PATH) as con:
+        con.row_factory = sqlite3.Row
+        cur = con.cursor()
+
+        row = cur.execute(
+            "SELECT id, status FROM requests WHERE id = ?",
+            (request_id,),
+        ).fetchone()
+
+        if row is None:
+            return False, f"Request {request_id} not found"
+
+        current = row["status"]
+
+        if current not in VALID_STATUSES:
+            return False, f"Request {request_id} has unknown status: {current}"
+
+        if not _can_transition(current, target_status):
+            return False, f"Invalid transition: {current} -> {target_status}"
+
+        # Build the update dynamically so we only set relevant audit fields
+        fields = ["status = ?", "updated_at = ?"]
+        params: list[object] = [target_status, now]
+
+        if target_status == STATUS_APPROVED:
+            fields += ["approved_by = ?", "approved_at = ?"]
+            params += [actor, now]
+
+        elif target_status == STATUS_REJECTED:
+            rr = (reject_reason or "").strip()
+            if not rr:
+                return False, "Reject requires a reason"
+            fields += ["rejected_reason = ?"]
+            params += [rr]
+
+        elif target_status == STATUS_COMPLETED:
+            fields += ["completed_at = ?"]
+            params += [now]
+
+        params.append(request_id)
+
+        cur.execute(
+            f"UPDATE requests SET {', '.join(fields)} WHERE id = ?",
+            params,
+        )
+
+    return True, "ok"
+
 def xml_response(xml: str) -> Response:
     # Cisco phones can be picky; keep it simple.
     return Response(xml + "\n", content_type="text/xml")
-
 
 def x(text: str) -> str:
     # XML-escape content
@@ -297,14 +385,79 @@ def phone_quit():
 @app.get("/admin/list")
 def admin_list():
     with sqlite3.connect(DB_PATH) as con:
+        con.row_factory = sqlite3.Row
         rows = con.execute(
-            "SELECT id, created_at, source_ip, kind, status, details FROM requests ORDER BY id DESC LIMIT 50"
+            """
+            SELECT id, created_at, updated_at, approved_by,
+                   approved_at, completed_at, rejected_reason,
+                   source_ip, kind, status, details
+            FROM requests
+            ORDER BY id DESC
+            LIMIT 50
+            """
         ).fetchall()
 
-    lines = ["id | created_at | source_ip | kind | status | details"]
+    def s(val: object) -> str:
+        return "" if val is None else str(val)
+
+    def trunc(text: str, n: int) -> str:
+        return text if len(text) <= n else text[: n - 1] + "…"
+
+    header = (
+        f"{'ID':>4}  {'STATUS':<10}  {'CREATED':<20}  {'UPDATED':<20}  "
+        f"{'KIND':<18}  {'SRC_IP':<15}  {'APPROVED_BY':<12}  {'REJECT':<18}  {'DETAILS':<60}"
+    )
+    lines = [header, "-" * len(header)]
+
     for r in rows:
-        lines.append(f"{r[0]} | {r[1]} | {r[2]} | {r[3]} | {r[4]} | {r[5]}")
-    return "<pre>" + "\n".join(lines) + "</pre>"
+        lines.append(
+            f"{r['id']:>4}  "
+            f"{trunc(s(r['status']), 10):<10}  "
+            f"{trunc(s(r['created_at']), 20):<20}  "
+            f"{trunc(s(r['updated_at']), 20):<20}  "
+            f"{trunc(s(r['kind']), 18):<18}  "
+            f"{trunc(s(r['source_ip']), 15):<15}  "
+            f"{trunc(s(r['approved_by']), 12):<12}  "
+            f"{trunc(s(r['rejected_reason']), 18):<18}  "
+            f"{trunc(s(r['details']), 60):<60}"
+        )
+
+    return Response("<pre>" + "\n".join(lines) + "</pre>", mimetype="text/html")
+
+
+@app.post("/admin/approve/<int:rid>")
+def admin_approve(rid: int):
+    ok, msg = _apply_transition(
+        request_id=rid,
+        target_status=STATUS_APPROVED,
+        actor=current_actor(),
+    )
+    code = 200 if ok else 400
+    return Response(f"<pre>{'OK' if ok else 'ERROR'}: {msg}</pre>", status=code)
+
+
+@app.post("/admin/reject/<int:rid>")
+def admin_reject(rid: int):
+    reason = (request.values.get("reason") or "").strip()
+    ok, msg = _apply_transition(
+        request_id=rid,
+        target_status=STATUS_REJECTED,
+        actor=current_actor(),
+        reject_reason=reason,
+    )
+    code = 200 if ok else 400
+    return Response(f"<pre>{'OK' if ok else 'ERROR'}: {msg}</pre>", status=code)
+
+
+@app.post("/admin/complete/<int:rid>")
+def admin_complete(rid: int):
+    ok, msg = _apply_transition(
+        request_id=rid,
+        target_status=STATUS_COMPLETED,
+        actor=current_actor(),
+    )
+    code = 200 if ok else 400
+    return Response(f"<pre>{'OK' if ok else 'ERROR'}: {msg}</pre>", status=code)
 
 
 @app.get("/health")

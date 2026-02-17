@@ -121,6 +121,7 @@ Audit fields:
 -   Local data storage (no external database exposure)
 -   Controlled service restarts via systemd
 -   Admin endpoints protected by Nginx Basic Authentication
+-   Admin endpoints require valid username in ADMIN_USERS configuration
 
 ------------------------------------------------------------------------
 

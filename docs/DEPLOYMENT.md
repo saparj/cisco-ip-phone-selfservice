@@ -240,6 +240,13 @@ Create credential file:
 sudo htpasswd -c /etc/nginx/.htpasswd-phone-services admin
 ```
 
+Set allowed administrators in environment:
+
+```file
+/opt/phone-services/.env
+ADMIN_USERS=admin,john,etc.
+```
+
 Reload Nginx:
 
 ```bash

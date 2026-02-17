@@ -177,12 +177,16 @@ server {
 
     # Admin portal
     location /admin/ {
+        auth_basic "Admin Portal";
+        auth_basic_user_file /etc/nginx/.htpasswd-phone-services;
+
         proxy_pass http://127.0.0.1:8000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Remote-User $remote_user;
     }
 
     # Health endpoint
@@ -217,6 +221,34 @@ Validate and reload Nginx:
 sudo nginx -t
 sudo systemctl reload nginx
 ```
+
+------------------------------------------------------------------------
+
+## 7.1 Configure Admin Authentication
+
+Administrative endpoints are protected using Nginx Basic Authentication.
+
+Install htpasswd utility:
+
+```bash
+sudo apt install apache2-utils
+```
+
+Create credential file:
+
+```bash
+sudo htpasswd -c /etc/nginx/.htpasswd-phone-services admin
+```
+
+Reload Nginx:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+The authenticated username is forwarded to the application
+via the X-Remote-User header and recorded in audit fields.
 
 ------------------------------------------------------------------------
 

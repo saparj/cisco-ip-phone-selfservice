@@ -46,7 +46,8 @@ Responsibilities:
 - Handle validation and error conditions
 
 Key Endpoints: - /phone/menu - /phone/phonename/info - /phone/dnlabel -
-/phone/submit_dnlabel - /phone/recent - /phone/quit - /admin/list
+/phone/submit_dnlabel - /phone/recent - /phone/quit - /admin/list - 
+/admin/approve/<id> - /admin/reject/<id> - /admin/complete/<id>
 
 ### 5. SQLite Database
 
@@ -80,6 +81,38 @@ Key Endpoints: - /phone/menu - /phone/phonename/info - /phone/dnlabel -
 
 ------------------------------------------------------------------------
 
+## Request Lifecycle
+
+Requests follow a validated state machine.
+
+Valid states:
+
+- Pending
+- Approved
+- Rejected
+- Completed
+
+Allowed transitions:
+
+- Pending → Approved
+- Pending → Rejected
+- Approved → Completed
+
+All other transitions are rejected by the application.
+
+Status changes are validated server-side and written atomically
+with audit metadata (updated_at and relevant audit fields).
+
+Audit fields:
+
+- updated_at
+- approved_by
+- approved_at
+- completed_at
+- rejected_reason
+
+------------------------------------------------------------------------
+
 ## Security Model
 
 -   Backend not exposed externally
@@ -87,6 +120,7 @@ Key Endpoints: - /phone/menu - /phone/phonename/info - /phone/dnlabel -
 -   No credentials stored in code
 -   Local data storage (no external database exposure)
 -   Controlled service restarts via systemd
+-   Admin endpoints protected by Nginx Basic Authentication
 
 ------------------------------------------------------------------------
 
@@ -96,7 +130,6 @@ For enterprise deployment:
 
 -   Replace SQLite with PostgreSQL
 -   Add TLS (HTTPS)
--   Add authentication for admin routes
 -   Replace flat request storage with structured schema
 -   Add logging aggregation
 -   Add health-check endpoint

@@ -1,4 +1,4 @@
-from flask import Flask, Response, request
+from flask import Flask, Response, request, abort
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -7,6 +7,7 @@ import html
 import os
 from dotenv import load_dotenv
 import json
+from functools import wraps
 
 APP_VERSION = "0.2.0-dev"
 
@@ -16,6 +17,11 @@ app = Flask(__name__)
 
 DB_PATH = Path(os.getenv("DB_PATH", Path(__file__).with_name("tickets.db")))
 BASE_URL = os.getenv("BASE_URL", "http://example.local")
+ADMIN_USERS = set(
+    u.strip()
+    for u in os.getenv("ADMIN_USERS", "admin").split(",")
+    if u.strip()
+)
 
 # --- Workflow states (v0.2.0) ---
 
@@ -144,6 +150,23 @@ def _apply_transition(
         )
 
     return True, "ok"
+
+def require_admin(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        user = request.headers.get("X-Remote-User")
+
+        # Must be authenticated via Nginx
+        if not user:
+            abort(403)
+
+        # Must be an allowed admin
+        if user not in ADMIN_USERS:
+            abort(403)
+
+        return f(*args, **kwargs)
+
+    return wrapper
 
 def xml_response(xml: str) -> Response:
     # Cisco phones can be picky; keep it simple.
@@ -383,6 +406,7 @@ def phone_quit():
 
 
 @app.get("/admin/list")
+@require_admin
 def admin_list():
     with sqlite3.connect(DB_PATH) as con:
         con.row_factory = sqlite3.Row
@@ -426,6 +450,7 @@ def admin_list():
 
 
 @app.post("/admin/approve/<int:rid>")
+@require_admin
 def admin_approve(rid: int):
     ok, msg = _apply_transition(
         request_id=rid,
@@ -437,6 +462,7 @@ def admin_approve(rid: int):
 
 
 @app.post("/admin/reject/<int:rid>")
+@require_admin
 def admin_reject(rid: int):
     reason = (request.values.get("reason") or "").strip()
     ok, msg = _apply_transition(
@@ -450,6 +476,7 @@ def admin_reject(rid: int):
 
 
 @app.post("/admin/complete/<int:rid>")
+@require_admin
 def admin_complete(rid: int):
     ok, msg = _apply_transition(
         request_id=rid,

@@ -66,6 +66,17 @@ Key Endpoints: - /phone/menu - /phone/phonename/info - /phone/dnlabel -
     -   completed_at
     -   rejected_reason
 
+### 6. requests.details (Structured JSON)
+
+-   'requests.details' stores structured request data as JSON (serialized into a TEXT column).
+-   This field contains:
+    -   Request-specific fields (e.g., DN, requested display name, justification)
+    -   Embedded requester metadata (e.g., source IP, user agent)
+    -   A 'schema_version' field for future compatibility
+-   Notes:
+    -   DN remains user-supplied in v0.2.0
+    -   Future versions may normalize this JSON into a relational schema
+
 ------------------------------------------------------------------------
 
 ## Data Flow -- Phone Name Update
@@ -131,6 +142,6 @@ For enterprise deployment:
 
 -   Replace SQLite with PostgreSQL
 -   Add TLS (HTTPS)
--   Replace flat request storage with structured schema
+-   Replace JSON-in-TEXT with normalized relational schema (PostgreSQL)
 -   Add logging aggregation
 -   Add health-check endpoint

@@ -7,6 +7,7 @@ import html
 import os
 from dotenv import load_dotenv
 import json
+import re
 from functools import wraps
 
 APP_VERSION = "0.2.0-dev"
@@ -44,6 +45,14 @@ def _can_transition(current_status: str, target: str) -> bool:
 
 def utc_now() -> str:
     return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+def build_details_phone_name_update(dn: str, requested_name: str, why: str) -> dict:
+    return {
+        "schema_version": 1,
+        "dn": dn,
+        "requested_name": requested_name,
+        "why": why,
+    }
 
 def current_actor() -> str:
     # Provided by nginx basic auth via proxy_set_header
@@ -321,7 +330,15 @@ def phone_dnlabel():
 
 @app.route("/phone/submit_dnlabel", methods=["GET", "POST"])
 def phone_submit_dnlabel():
-    DEFAULT_PT = "INTERNAL_PT"
+    MAX_NAME_LEN = 32  # arbitrary limit to keep details reasonably sized
+    MAX_JUSTIFICATION_LEN = 256
+
+    dn_patterns = [
+        r"^1[2-9]\d{2}[2-9]\d{6}$", # Country code + 10 digit number
+        r"^[2-9]\d{2}[2-9]\d{6}$",   # 10 digit number
+        r"^[2-9]\d{6}$",             # 7 digit number
+        r"^\d{4}$",               # 4 digit short extension
+    ]
 
     dn = (request.values.get("dn") or "").strip()
     requested_name = (request.values.get("requestedName") or "").strip()
@@ -334,18 +351,50 @@ def phone_submit_dnlabel():
   <Text>DN and Requested name are required.</Text>
 </CiscoIPPhoneText>"""
         return xml_response(xml)
+    
+    if not any(re.fullmatch(pattern, dn) for pattern in dn_patterns):
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+<CiscoIPPhoneText>
+  <Title>Error</Title>
+  <Text>DN not in valid format.</Text>
+</CiscoIPPhoneText>"""
+        return xml_response(xml)
+    
+    if len(requested_name) > MAX_NAME_LEN:
+        xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<CiscoIPPhoneText>
+  <Title>Error</Title>
+  <Text>Requested name is too long (max {MAX_NAME_LEN} characters).</Text>
+</CiscoIPPhoneText>"""
+        return xml_response(xml)
 
-    pt = DEFAULT_PT
+    if len(why) > MAX_JUSTIFICATION_LEN:
+        xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<CiscoIPPhoneText>
+  <Title>Error</Title>
+  <Text>Justification is too long (max {MAX_JUSTIFICATION_LEN} characters).</Text>
+</CiscoIPPhoneText>"""
+        return xml_response(xml)
 
     source_ip = request.headers.get("X-Real-IP", request.remote_addr)
     user_agent = request.headers.get("User-Agent", "")
 
-    details = f"DN={dn}, PT={pt}, requested_name={requested_name}, why={why}"
+    payload = build_details_phone_name_update(
+        dn=dn,
+        requested_name=requested_name,
+        why=why,
+    )
+    payload["requester"] = {
+        "ip": source_ip,
+        "user_agent": user_agent,
+        "device_name": None, # future: phone hostname
+    }
+    details = json.dumps(payload, ensure_ascii=False)
 
     with sqlite3.connect(DB_PATH) as con:
         cur = con.cursor()
 
-        now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        now = utc_now()
 
         cur.execute(
             """
@@ -446,7 +495,8 @@ def admin_list():
             f"{trunc(s(r['details']), 60):<60}"
         )
 
-    return Response("<pre>" + "\n".join(lines) + "</pre>", mimetype="text/html")
+    escaped_report = html.escape("\n".join(lines))
+    return Response("<pre>" + escaped_report + "</pre>", mimetype="text/html")
 
 
 @app.post("/admin/approve/<int:rid>")
@@ -503,7 +553,7 @@ def health():
         "status": status,
         "version": APP_VERSION,
         "db": db_status,
-        "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "timestamp": utc_now(),
     }
 
     return Response(

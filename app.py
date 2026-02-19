@@ -1,4 +1,4 @@
-from flask import Flask, Response, request, abort
+from flask import Flask, Response, request, abort, redirect, url_for
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -457,6 +457,128 @@ def phone_quit():
     return xml_response(xml)
 
 
+
+@app.get("/admin/dashboard")
+@require_admin
+def admin_dashboard():
+    # Simple HTML dashboard, no JS frameworks. Actions POST to existing endpoints.
+    with sqlite3.connect(DB_PATH) as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            """
+            SELECT
+            id, created_at, updated_at, kind, status, source_ip, approved_by,
+            approved_at, completed_at, rejected_reason, details
+            FROM requests
+            ORDER BY id DESC
+            LIMIT 50
+            """
+        ).fetchall()
+
+    def h(s: object) -> str:
+        return html.escape("" if s is None else str(s), quote=True)
+    
+    def summary(details_text: str) -> str:
+        # details is JSON-in-TEXT; show a compact summary without coupling too hard to schema
+        try:
+            d = json.loads(details_text or "{}")
+            dn = d.get("dn") or (d.get("request") or {}).get("dn")
+            rn = d.get("requested_name") or (d.get("request") or {}).get("requested_name")
+            why = d.get("why") or (d.get("request") or {}).get("why")
+            bits = []
+            if dn:
+                bits.append(f"DN: {dn}")
+            if rn:
+                bits.append(f"Name: {rn}")
+            if why:
+                bits.append(f"Why: {why}")
+            return " | ".join(bits) if bits else "-"
+        except Exception:
+            return "-"
+        
+    # Minimal inline CSS (no frameworks)
+    css = """
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:20px;}
+    h1{margin:0 0 6px 0;}
+    .meta{color:#555;margin:0 0 16px 0;}
+    table{border-collapse:collapse;width:100%;}
+    th,td{border:1px solid #ddd;padding:8px;vertical-align:top;}
+    th{background:#f6f6f6;text-align:left;}
+    code{white-space:nowrap;}
+    .actions form{display:inline;margin:0 6px 6px 0;}
+    input[type=text]{padding:6px;width:220px;}
+    button{padding:6px 10px;cursor:pointer;}
+    .pill{padding:2px 8px;border-radius:999px;background:#eee;display:inline-block;}
+    """
+
+    lines = []
+    lines.append("<!doctype html>")
+    lines.append("<html><head>")
+    lines.append("<meta charset='utf-8'>")
+    lines.append("<meta name='viewport' content='width=device-width, initial-scale=1'>")
+    lines.append(f"<title>Admin Dashboard</title><style>{css}</style></head><body>")
+    lines.append("<h1>Admin Dashboard</h1>")
+    lines.append(f"<p class='meta'>Signed in as <b>{h(current_actor())}</b> · Showing newest 50</p>")
+    lines.append("<table>")
+    lines.append(
+        "<tr>"
+        "<th>ID</th><th>Status</th><th>Created</th><th>Kind</th><th>Summary</th><th>Audit</th><th>Actions</th>"
+        "</tr>"
+    )
+
+    for r in rows:
+        rid = r["id"]
+        status = r["status"]
+        kind = r["kind"]
+
+        audit_bits = []
+        if r["approved_by"]:
+            audit_bits.append(f"approved_by={h(r['approved_by'])}")
+        if r["rejected_reason"]:
+            audit_bits.append(f"rejected_reason={h(r['rejected_reason'])}")
+        if r["completed_at"]:
+            audit_bits.append(f"completed_at={h(r['completed_at'])}")
+
+        audit_text = "<br>".join(audit_bits) if audit_bits else "—"
+
+        actions = ["<div class='actions'>"]
+        if status == STATUS_PENDING:
+            actions.append(
+                f"<form method='post' action='{url_for('admin_approve', rid=rid)}'>"
+                f"<button type='submit'>Approve</button></form>"
+            )
+            actions.append(
+                f"<form method='post' action='{url_for('admin_reject', rid=rid)}'>"
+                f"<input type='text' name='reason' placeholder='Reject reason' required>"
+                f"<button type='submit'>Reject</button></form>"
+            )
+        elif status == STATUS_APPROVED:
+            actions.append(
+                f"<form method='post' action='{url_for('admin_complete', rid=rid)}'>"
+                f"<button type='submit'>Complete</button></form>"
+            )
+        else:
+            actions.append("<span class='pill'>No actions</span>")
+        actions.append("</div>")
+
+        lines.append(
+            "<tr>"
+            f"<td><code>{rid}</code></td>"
+            f"<td>{h(status)}</td>"
+            f"<td>{h(r['created_at'])}</td>"
+            f"<td>{h(kind)}</td>"
+            f"<td>{h(summary(r['details']))}</td>"
+            f"<td>{audit_text}</td>"
+            f"<td>{''.join(actions)}</td>"
+            "</tr>"
+        )
+
+    lines.append("</table>")
+    lines.append("</body></html>")
+
+    return Response("\n".join(lines), mimetype="text/html")
+
+
 @app.get("/admin/list")
 @require_admin
 def admin_list():
@@ -511,7 +633,7 @@ def admin_approve(rid: int):
         actor=current_actor(),
     )
     code = 200 if ok else 400
-    return Response(f"<pre>{'OK' if ok else 'ERROR'}: {msg}</pre>", status=code)
+    return redirect(url_for("admin_dashboard"))
 
 
 @app.post("/admin/reject/<int:rid>")
@@ -525,7 +647,7 @@ def admin_reject(rid: int):
         reject_reason=reason,
     )
     code = 200 if ok else 400
-    return Response(f"<pre>{'OK' if ok else 'ERROR'}: {msg}</pre>", status=code)
+    return redirect(url_for("admin_dashboard"))
 
 
 @app.post("/admin/complete/<int:rid>")
@@ -537,7 +659,7 @@ def admin_complete(rid: int):
         actor=current_actor(),
     )
     code = 200 if ok else 400
-    return Response(f"<pre>{'OK' if ok else 'ERROR'}: {msg}</pre>", status=code)
+    return redirect(url_for("admin_dashboard"))
 
 
 @app.get("/health")

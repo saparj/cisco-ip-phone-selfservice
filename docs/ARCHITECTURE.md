@@ -47,7 +47,7 @@ Responsibilities:
 
 Key Endpoints: - /phone/menu - /phone/phonename/info - /phone/dnlabel -
 /phone/submit_dnlabel - /phone/recent - /phone/quit - /admin/list - 
-/admin/approve/<id> - /admin/reject/<id> - /admin/complete/<id>
+/admin/approve/<id> - /admin/reject/<id> - /admin/complete/<id> - /health
 
 ### 5. SQLite Database
 

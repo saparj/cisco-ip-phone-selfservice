@@ -18,7 +18,9 @@ sudo apt install python3 python3-venv python3-pip nginx
 
 Application code should reside in:
 
-    /opt/phone-services
+``` file
+/opt/phone-services
+```
 
 Create the directory and set ownership to your development user:
 
@@ -51,8 +53,10 @@ cp .env.example .env
 
 Edit `.env` as needed:
 
-    BASE_URL=http://example.local
-    DB_PATH=/var/lib/phone-services/tickets.db
+``` ini
+BASE_URL=http://example.local
+DB_PATH=/var/lib/phone-services/tickets.db
+```
 
 ------------------------------------------------------------------------
 
@@ -87,7 +91,9 @@ Application code lives in `/opt/phone-services`.
 
 The application uses a SQLite database located at:
 
-    /var/lib/phone-services/tickets.db
+``` file
+/var/lib/phone-services/tickets.db
+```
 
 The application performs additive schema migrations automatically at startup.
 
@@ -98,7 +104,7 @@ On subsequent launches, missing columns are added if required
 Before upgrading between versions, it is recommended to back up
 the database file.
 
-```bash
+``` bash
 sudo cp /var/lib/phone-services/tickets.db \
         /var/lib/phone-services/tickets.db.bak.$(date +%F)
 ```
@@ -153,7 +159,7 @@ sudo nano /etc/nginx/sites-available/phone-services
 
 Paste the server{...} block into that file:
 
-``` nginx
+``` conf
 server {
     listen 80;
     server_name _;
@@ -230,26 +236,26 @@ Administrative endpoints are protected using Nginx Basic Authentication.
 
 Install htpasswd utility:
 
-```bash
+``` bash
 sudo apt install apache2-utils
 ```
 
 Create credential file:
 
-```bash
+``` bash
 sudo htpasswd -c /etc/nginx/.htpasswd-phone-services admin
 ```
 
 Set allowed administrators in environment:
 
-```file
+``` file
 /opt/phone-services/.env
 ADMIN_USERS=admin,john,etc.
 ```
 
 Reload Nginx:
 
-```bash
+``` bash
 sudo nginx -t
 sudo systemctl reload nginx
 ```

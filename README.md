@@ -46,10 +46,13 @@ Cisco IP Phones
 This repository is provided as a lab/demo reference architecture for engineers building Cisco IP Phone–based self-service tools.
 
 ## Docs
+
 - [Architecture](docs/ARCHITECTURE.md)
 - [Deployment](docs/DEPLOYMENT.md)
 - [Production Readiness](docs/PRODUCTION_READINESS.md)
 - [Risk Matrix](docs/RISK_MATRIX.md)
+
+---
 
 ## Security
 

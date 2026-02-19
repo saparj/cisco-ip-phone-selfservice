@@ -12,6 +12,9 @@ from functools import wraps
 
 APP_VERSION = "0.2.0-dev"
 
+PHONE_UI_TITLE = "UC Self-Service"
+PHONE_UI_SUBTITLE = "IP Phone Requests"
+
 load_dotenv()
 
 app = Flask(__name__)
@@ -211,8 +214,8 @@ def handle_all_errors(e):
 def phone_menu():
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <CiscoIPPhoneMenu>
-  <Title>Lab Tickets</Title>
-  <Prompt>Select an option</Prompt>
+  <Title>{PHONE_UI_TITLE}</Title>
+  <Prompt>{PHONE_UI_SUBTITLE}</Prompt>
 
   <MenuItem>
     <Name>My recent requests</Name>

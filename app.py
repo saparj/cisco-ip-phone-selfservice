@@ -14,6 +14,9 @@ APP_VERSION = "0.2.0-dev"
 
 PHONE_UI_TITLE = "UC Self-Service"
 PHONE_UI_SUBTITLE = "IP Phone Requests"
+PHONE_UI_HOME_LABEL = "Home"
+PHONE_UI_BACK_LABEL = "Back"
+PHONE_UI_EXIT_LABEL = "Exit"
 
 load_dotenv()
 
@@ -188,6 +191,31 @@ def x(text: str) -> str:
     # XML-escape content
     return html.escape(text or "", quote=True)
 
+def phone_softkeys(*, back_url: str | None = None) -> str:
+    keys = []
+    pos = 1
+    if back_url:
+        keys.append(f"""  <SoftKeyItem>
+    <Name>{PHONE_UI_BACK_LABEL}</Name>
+    <URL>{back_url}</URL>
+    <Position>{pos}</Position>
+  </SoftKeyItem>""")
+        pos += 1
+
+    keys.append(f"""  <SoftKeyItem>
+    <Name>{PHONE_UI_HOME_LABEL}</Name>
+    <URL>{BASE_URL}/phone/menu</URL>
+    <Position>{pos}</Position>
+  </SoftKeyItem>""")
+    pos += 1
+
+    keys.append(f"""  <SoftKeyItem>
+    <Name>{PHONE_UI_EXIT_LABEL}</Name>
+    <URL>{BASE_URL}/phone/quit</URL>
+    <Position>3</Position>
+  </SoftKeyItem>""")
+    return "\n".join(keys)
+
 
 @app.errorhandler(Exception)
 def handle_all_errors(e):
@@ -268,36 +296,106 @@ def phone_recent():
 
     with sqlite3.connect(DB_PATH) as con:
         rows = con.execute(
-            "SELECT id, created_at, kind, status FROM requests WHERE source_ip=? ORDER BY id DESC LIMIT 10",
+            "SELECT id, created_at, kind, status, details FROM requests WHERE source_ip=? ORDER BY id DESC LIMIT 10",
             (source_ip,),
         ).fetchall()
 
     items = []
-    for rid, created_at, kind, status in rows:
-        # Put ALL readable info in Name
-        display = f"#{rid} {status} {kind} {created_at}"
+    for rid, _, _, status, details_text in rows:
+        # Compact, readable summary. Avoid coupling too tightly to JSON structure.
+        dn = ""
+        try:
+            d = json.loads(details_text or "{}")
+            dn = d.get("dn") or (d.get("request") or {}).get("dn") or ""
+        except Exception:
+            dn = ""
 
+        # Keep it short for phone screens
+        label_bits = [f"#{rid}", status]
+        if dn:
+            label_bits.append(dn)
+        label = " ".join(label_bits)
+
+        # MenuItem URL: keep it simple for v0.2.0
+        # For now, selecting an item shows a small detail screen.
         items.append(
-            f"""  <DirectoryEntry>
-    <Name>{x(display)}</Name>
-    <Telephone></Telephone>
-  </DirectoryEntry>"""
+            f"""  <MenuItem>
+    <Name>{x(label)}</Name>
+    <URL>{BASE_URL}/phone/recent/{rid}</URL>
+  </MenuItem>"""
         )
 
     if not items:
         items.append(
-            """  <DirectoryEntry>
-    <Name>No requests yet</Name>
-    <Telephone></Telephone>
-  </DirectoryEntry>"""
+            f"""  <MenuItem>
+    <Name>{x("No requests yet")}</Name>
+    <URL>{BASE_URL}/phone/menu</URL>
+  </MenuItem>"""
         )
 
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<CiscoIPPhoneDirectory>
+<CiscoIPPhoneMenu>
   <Title>My Requests</Title>
   <Prompt>Last 10 from this phone/IP</Prompt>
 {chr(10).join(items)}
-</CiscoIPPhoneDirectory>"""
+
+  {phone_softkeys()}
+</CiscoIPPhoneMenu>"""
+
+    return xml_response(xml)
+
+
+@app.get("/phone/recent/<int:rid>")
+def phone_recent_detail(rid: int):
+    source_ip = request.headers.get("X-Real-IP", request.remote_addr)
+
+    with sqlite3.connect(DB_PATH) as con:
+        con.row_factory = sqlite3.Row
+        row = con.execute(
+            "SELECT id, created_at, kind, status, details FROM requests WHERE id=? AND source_ip=?",
+            (rid, source_ip),
+        ).fetchone()
+
+    if row is None:
+        xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<CiscoIPPhoneText>
+  <Title>Not Found</Title>
+  <Text>Request not found.</Text>
+
+  {phone_softkeys(back_url=f"{BASE_URL}/phone/recent")}
+</CiscoIPPhoneText>"""
+        return xml_response(xml)
+
+    # Build a readable detail text with minimal coupling to JSON
+    dn = rn = why = ""
+    try:
+        d = json.loads(row["details"] or "{}")
+        dn = d.get("dn") or (d.get("request") or {}).get("dn") or ""
+        rn = d.get("requested_name") or (d.get("request") or {}).get("requested_name") or ""
+        why = d.get("why") or (d.get("request") or {}).get("why") or ""
+    except Exception:
+        pass
+
+    lines = [
+        f"ID: #{row['id']}",
+        f"Status: {row['status']}",
+        f"Kind: {row['kind']}",
+        f"Created: {row['created_at']}",
+    ]
+    if dn:
+        lines.append(f"DN: {dn}")
+    if rn:
+        lines.append(f"Name: {rn}")
+    if why:
+        lines.append(f"Why: {why}")
+
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<CiscoIPPhoneText>
+  <Title>Request #{row['id']}</Title>
+  <Text>{x(chr(10).join(lines))}</Text>
+
+  {phone_softkeys(back_url=f"{BASE_URL}/phone/recent")}
+</CiscoIPPhoneText>"""
 
     return xml_response(xml)
 
@@ -306,8 +404,8 @@ def phone_recent():
 def phone_dnlabel():
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <CiscoIPPhoneInput>
-  <Title>Phone Name Update</Title>
-  <Prompt>Enter DN and requested name</Prompt>
+  <Title>Update Display Name</Title>
+  <Prompt>Enter DN and new name</Prompt>
   <URL>{BASE_URL}/phone/submit_dnlabel</URL>
 
   <InputItem>

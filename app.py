@@ -419,7 +419,7 @@ def phone_dnlabel():
     <QueryStringParam>requestedName</QueryStringParam>
     <InputFlags>A</InputFlags>
   </InputItem>
-  
+
   <InputItem>
     <DisplayName>Justification</DisplayName>
     <QueryStringParam>why</QueryStringParam>
@@ -452,7 +452,7 @@ def phone_submit_dnlabel():
   <Text>DN and Requested name are required.</Text>
 </CiscoIPPhoneText>"""
         return xml_response(xml)
-    
+
     if not any(re.fullmatch(pattern, dn) for pattern in dn_patterns):
         xml = """<?xml version="1.0" encoding="UTF-8"?>
 <CiscoIPPhoneText>
@@ -460,7 +460,7 @@ def phone_submit_dnlabel():
   <Text>DN not in valid format.</Text>
 </CiscoIPPhoneText>"""
         return xml_response(xml)
-    
+
     if len(requested_name) > MAX_NAME_LEN:
         xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <CiscoIPPhoneText>
@@ -524,7 +524,7 @@ def phone_submit_dnlabel():
 <CiscoIPPhoneText>
   <Title>Submitted</Title>
   <Text>Phone name update request #{rid} created (Pending).</Text>
-  
+
   <SoftKeyItem>
     <Name>Home</Name>
     <URL>{BASE_URL}/phone/menu</URL>
@@ -540,7 +540,7 @@ def phone_submit_dnlabel():
     <URL>{BASE_URL}/phone/quit</URL>
     <Position>3</Position>
   </SoftKeyItem>
-  
+
 </CiscoIPPhoneText>"""
     return xml_response(xml)
 
@@ -555,6 +555,149 @@ def phone_quit():
     return xml_response(xml)
 
 
+def admin_css() -> str:
+    return """
+    :root{
+      --bg:#ffffff; --fg:#111; --muted:#555; --card:#f6f6f6; --border:#ddd; --pill:#eee;
+      --link:#0b57d0;
+
+      --pending-bg:#fff4cc;
+      --pending-fg:#7a5d00;
+
+      --approved-bg:#e6f4ea;
+      --approved-fg:#1e7e34;
+
+      --rejected-bg:#fde7e9;
+      --rejected-fg:#a61b29;
+
+      --completed-bg:#e8f0fe;
+      --completed-fg:#174ea6;
+    }
+    @media (prefers-color-scheme: dark){
+      :root{
+        --bg:#0f1115; --fg:#e7e7e7; --muted:#a8a8a8; --card:#1a1f27; --border:#2a3340; --pill:#232a35;
+        --link:#8ab4f8;
+
+        --pending-bg:#3a2f00;
+        --pending-fg:#ffd966;
+
+        --approved-bg:#0f2f1f;
+        --approved-fg:#7ee2a8;
+
+        --rejected-bg:#3a161a;
+        --rejected-fg:#ff9aa2;
+
+        --completed-bg:#14233b;
+        --completed-fg:#9cc3ff;
+      }
+    }
+    body{
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      margin:20px;background:var(--bg);
+      color:var(--fg);
+      line-height:1.4;
+    }
+    a{color:var(--link);text-decoration:none;}
+    a:hover{text-decoration:underline;}
+    a:focus-visible, button:focus-visible, input:focus-visible{outline:2px solid var(--link); outline-offset:2px;}
+    h1{margin:0 0 6px 0;}
+    .meta{color:var(--muted);margin:0 0 10px 0;}
+    .topbar{margin:0 0 16px 0;color:var(--muted);}
+    table{border-collapse:collapse;width:100%;}
+    th,td{border:1px solid var(--border);padding:8px;vertical-align:top;}
+    th{background:var(--card);text-align:left;}
+    table tr:first-child th{border-bottom:2px solid var(--border);}
+    tr:hover td{background:var(--card);}
+    code{white-space:nowrap;}
+    pre, code{overflow:auto;}
+    .actions form{display:inline;margin:0 6px 6px 0;}
+    .inline-form{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      margin:0 6px 6px 0;
+    }
+    input[type=text]{
+      padding:6px;
+      width:160px;
+      background:var(--bg);
+      color:var(--fg);
+      border:1px solid var(--border);
+      border-radius:8px;
+    }
+    button{
+      padding:6px 10px;
+      cursor:pointer;
+      background:var(--card);
+      color:var(--fg);
+      border:1px solid var(--border);
+      border-radius:8px;
+    }
+    .pill{
+      padding:2px 8px;
+      border-radius:999px;
+      background:var(--pill);
+      display:inline-block;
+      font-weight:600;
+      font-size:0.85em;
+    }
+    .pill.pending{background:var(--pending-bg);color:var(--pending-fg);}
+    .pill.approved{background:var(--approved-bg);color:var(--approved-fg);}
+    .pill.rejected{background:var(--rejected-bg);color:var(--rejected-fg);}
+    .pill.completed{background:var(--completed-bg);color:var(--completed-fg);}
+    """
+
+
+# --- Admin HTML helpers (no template engine; escape explicitly) ---
+def h(s: object) -> str:
+    """Escape text for safe insertion into HTML."""
+    return html.escape("" if s is None else str(s), quote=True)
+
+def code(s: object) -> str:
+    """Inline code formatting (escaped)."""
+    return f"<code>{h(s)}</code>"
+
+def pill(label: object, cls: str = "") -> str:
+    """Generic pill/badge (escaped label)."""
+    cls_attr = f"pill {cls}".strip() if cls else "pill"
+    return f"<span class='{h(cls_attr)}'>{h(label)}</span>"
+
+def status_pill(status: str) -> str:
+    """Status pill. Returns safe HTML; do not wrap in h()."""
+    s = (status or "").strip().lower()
+    cls = s if s in ("pending", "approved", "rejected", "completed") else "pending"
+    return pill(status, cls)
+
+def td_html(inner_html: str) -> str:
+    """Table cell for already-safe HTML."""
+    return f"<td>{inner_html}</td>"
+
+def td_text(val: object) -> str:
+    """Table cell for raw values (escaped)."""
+    return f"<td>{h(val)}</td>"
+
+def th_text(label: str) -> str:
+    return f"<th>{h(label)}</th>"
+
+def tr(*cells_html: str) -> str:
+    """Row from already-built <td>/<th> strings."""
+    return "<tr>" + "".join(cells_html) + "</tr>"
+
+def post_button(action_url: str, label: str) -> str:
+    """POST form button. action_url comes from url_for()."""
+    return (
+        f"<form method='post' action='{h(action_url)}'>"
+        f"<button type='submit'>{h(label)}</button></form>"
+    )
+
+def post_reject_form(action_url: str) -> str:
+    return (
+        f"<form method='post' action='{h(action_url)}' class='inline-form'>"
+        "<input type='text' name='reason' placeholder='Reject reason' required>"
+        "<button type='submit'>Reject</button></form>"
+        "</form>"
+    )
+
 
 @app.get("/admin/dashboard")
 @require_admin
@@ -565,17 +708,14 @@ def admin_dashboard():
         rows = con.execute(
             """
             SELECT
-            id, created_at, updated_at, kind, status, source_ip, approved_by,
-            approved_at, completed_at, rejected_reason, details
+              id, created_at, updated_at, kind, status, source_ip, approved_by,
+              approved_at, completed_at, rejected_reason, details
             FROM requests
             ORDER BY id DESC
             LIMIT 50
             """
         ).fetchall()
 
-    def h(s: object) -> str:
-        return html.escape("" if s is None else str(s), quote=True)
-    
     def summary(details_text: str) -> str:
         # details is JSON-in-TEXT; show a compact summary without coupling too hard to schema
         try:
@@ -590,91 +730,142 @@ def admin_dashboard():
                 bits.append(f"Name: {rn}")
             if why:
                 bits.append(f"Why: {why}")
-            return " | ".join(bits) if bits else "-"
+            return " | ".join(bits) if bits else "—"
         except Exception:
-            return "-"
-        
-    # Minimal inline CSS (no frameworks)
-    css = """
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:20px;}
-    h1{margin:0 0 6px 0;}
-    .meta{color:#555;margin:0 0 16px 0;}
-    table{border-collapse:collapse;width:100%;}
-    th,td{border:1px solid #ddd;padding:8px;vertical-align:top;}
-    th{background:#f6f6f6;text-align:left;}
-    code{white-space:nowrap;}
-    .actions form{display:inline;margin:0 6px 6px 0;}
-    input[type=text]{padding:6px;width:220px;}
-    button{padding:6px 10px;cursor:pointer;}
-    .pill{padding:2px 8px;border-radius:999px;background:#eee;display:inline-block;}
-    """
+            return "—"
 
-    lines = []
+    def audit_block(r: sqlite3.Row) -> str:
+        """Return safe HTML for the Audit column."""
+        bits: list[str] = []
+        if r["approved_by"]:
+            bits.append(f"approved_by={r['approved_by']}")
+        if r["rejected_reason"]:
+            bits.append(f"rejected_reason={r['rejected_reason']}")
+        if r["completed_at"]:
+            bits.append(f"completed_at={r['completed_at']}")
+        # Escape once when rendering; use <br> for readability.
+        if not bits:
+            return "—"
+        return "<br>".join(h(b) for b in bits)
+
+    css = admin_css()
+
+    lines: list[str] = []
     lines.append("<!doctype html>")
     lines.append("<html><head>")
     lines.append("<meta charset='utf-8'>")
     lines.append("<meta name='viewport' content='width=device-width, initial-scale=1'>")
     lines.append(f"<title>Admin Dashboard</title><style>{css}</style></head><body>")
     lines.append("<h1>Admin Dashboard</h1>")
-    lines.append(f"<p class='meta'>Signed in as <b>{h(current_actor())}</b> · Showing newest 50</p>")
+    lines.append(
+        "<div class='topbar'>"
+        "<a href='/admin/health'>Health</a> · "
+        "<a href='/admin/list'>Text view</a>"
+        "</div>"
+    )
+    lines.append(f"<p class='meta'>Signed in as <b>{h(current_actor())}</b> · Showing newest 50 requests (older requests not shown)</p>")
+
     lines.append("<table>")
     lines.append(
-        "<tr>"
-        "<th>ID</th><th>Status</th><th>Created</th><th>Kind</th><th>Summary</th><th>Audit</th><th>Actions</th>"
-        "</tr>"
+        tr(
+            th_text("ID"),
+            th_text("Status"),
+            th_text("Created"),
+            th_text("Kind"),
+            th_text("Summary"),
+            th_text("Audit"),
+            th_text("Actions"),
+        )
     )
 
     for r in rows:
         rid = r["id"]
         status = r["status"]
-        kind = r["kind"]
 
-        audit_bits = []
-        if r["approved_by"]:
-            audit_bits.append(f"approved_by={h(r['approved_by'])}")
-        if r["rejected_reason"]:
-            audit_bits.append(f"rejected_reason={h(r['rejected_reason'])}")
-        if r["completed_at"]:
-            audit_bits.append(f"completed_at={h(r['completed_at'])}")
-
-        audit_text = "<br>".join(audit_bits) if audit_bits else "—"
-
-        actions = ["<div class='actions'>"]
+        actions: list[str] = ["<div class='actions'>"]
         if status == STATUS_PENDING:
-            actions.append(
-                f"<form method='post' action='{url_for('admin_approve', rid=rid)}'>"
-                f"<button type='submit'>Approve</button></form>"
-            )
-            actions.append(
-                f"<form method='post' action='{url_for('admin_reject', rid=rid)}'>"
-                f"<input type='text' name='reason' placeholder='Reject reason' required>"
-                f"<button type='submit'>Reject</button></form>"
-            )
+            actions.append(post_button(url_for("admin_approve", rid=rid), "Approve"))
+            actions.append(post_reject_form(url_for("admin_reject", rid=rid)))
         elif status == STATUS_APPROVED:
-            actions.append(
-                f"<form method='post' action='{url_for('admin_complete', rid=rid)}'>"
-                f"<button type='submit'>Complete</button></form>"
-            )
+            actions.append(post_button(url_for("admin_complete", rid=rid), "Complete"))
         else:
-            actions.append("<span class='pill'>No actions</span>")
+            actions.append(pill("No actions"))
         actions.append("</div>")
 
         lines.append(
-            "<tr>"
-            f"<td><code>{rid}</code></td>"
-            f"<td>{h(status)}</td>"
-            f"<td>{h(r['created_at'])}</td>"
-            f"<td>{h(kind)}</td>"
-            f"<td>{h(summary(r['details']))}</td>"
-            f"<td>{audit_text}</td>"
-            f"<td>{''.join(actions)}</td>"
-            "</tr>"
+            tr(
+                td_html(code(rid)),
+                td_html(status_pill(status)),
+                td_text(r["created_at"]),
+                td_text(r["kind"]),
+                td_text(summary(r["details"])),
+                td_html(audit_block(r)),
+                td_html("".join(actions)),
+            )
         )
 
     lines.append("</table>")
     lines.append("</body></html>")
 
     return Response("\n".join(lines), mimetype="text/html")
+
+
+@app.get("/admin/health")
+@require_admin
+def admin_health():
+    # Mirror /health data, but render it as an admin-friendly page.
+    status = "ok"
+    db_status = "ok"
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            con.execute("SELECT 1").fetchone()
+    except Exception:
+        status = "degraded"
+        db_status = "error"
+
+    payload = {
+        "status": status,
+        "version": APP_VERSION,
+        "db": db_status,
+        "timestamp": utc_now(),
+    }
+
+    css = admin_css()
+    
+    pretty = h(json.dumps(payload, indent=2))
+
+    html_doc = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Health</title>
+  <style>
+{css}
+.card{{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin:12px 0;}}
+.kv{{display:grid;grid-template-columns:160px 1fr;gap:8px 12px;}}
+.k{{color:var(--muted);}}
+  </style>
+</head>
+<body>
+  <h1>Health</h1>
+  <p class="topbar"><a href="/admin/dashboard">← Back to dashboard</a></p>
+
+  <div class="card">
+    <div class="kv">
+      <div class="k">Status</div><div>{h(payload["status"])}</div>
+      <div class="k">Version</div><div>{h(payload["version"])}</div>
+      <div class="k">Database</div><div>{h(payload["db"])}</div>
+      <div class="k">Timestamp</div><div>{h(payload["timestamp"])}</div>
+    </div>
+  </div>
+
+  <h2 style="margin-top:18px;">Raw</h2>
+  <pre>{pretty}</pre>
+</body>
+</html>"""
+
+    return Response(html_doc, mimetype="text/html")
 
 
 @app.get("/admin/list")
@@ -725,12 +916,11 @@ def admin_list():
 @app.post("/admin/approve/<int:rid>")
 @require_admin
 def admin_approve(rid: int):
-    ok, msg = _apply_transition(
+    _apply_transition(
         request_id=rid,
         target_status=STATUS_APPROVED,
         actor=current_actor(),
     )
-    code = 200 if ok else 400
     return redirect(url_for("admin_dashboard"))
 
 
@@ -738,25 +928,26 @@ def admin_approve(rid: int):
 @require_admin
 def admin_reject(rid: int):
     reason = (request.values.get("reason") or "").strip()
-    ok, msg = _apply_transition(
+    if not reason:
+        return redirect(url_for("admin_dashboard"))
+    
+    _apply_transition(
         request_id=rid,
         target_status=STATUS_REJECTED,
         actor=current_actor(),
         reject_reason=reason,
     )
-    code = 200 if ok else 400
     return redirect(url_for("admin_dashboard"))
 
 
 @app.post("/admin/complete/<int:rid>")
 @require_admin
 def admin_complete(rid: int):
-    ok, msg = _apply_transition(
+    _apply_transition(
         request_id=rid,
         target_status=STATUS_COMPLETED,
         actor=current_actor(),
     )
-    code = 200 if ok else 400
     return redirect(url_for("admin_dashboard"))
 
 

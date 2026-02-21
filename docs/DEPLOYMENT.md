@@ -55,7 +55,7 @@ Edit `.env` as needed:
 
 ``` ini
 BASE_URL=http://example.local
-DB_PATH=/var/lib/phone-services/tickets.db
+DB_PATH=/var/lib/phone-services/requests.db
 ```
 
 ------------------------------------------------------------------------
@@ -76,7 +76,7 @@ sudo chown phone-services:phone-services /var/lib/phone-services
 sudo chmod 750 /var/lib/phone-services
 ```
 
-This directory stores the SQLite database file (tickets.db).
+This directory stores the SQLite database file (requests.db).
 It must exist before the service is started.
 
 The database file itself is created automatically on first launch.
@@ -92,7 +92,7 @@ Application code lives in `/opt/phone-services`.
 The application uses a SQLite database located at:
 
 ``` file
-/var/lib/phone-services/tickets.db
+/var/lib/phone-services/requests.db
 ```
 
 The application performs additive schema migrations automatically at startup.
@@ -105,8 +105,8 @@ Before upgrading between versions, it is recommended to back up
 the database file.
 
 ``` bash
-sudo cp /var/lib/phone-services/tickets.db \
-        /var/lib/phone-services/tickets.db.bak.$(date +%F)
+sudo cp /var/lib/phone-services/requests.db \
+        /var/lib/phone-services/requests.db.bak.$(date +%F)
 ```
 
 ------------------------------------------------------------------------

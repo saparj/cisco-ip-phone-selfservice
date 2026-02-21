@@ -9,7 +9,6 @@ __pycache__/
 venv/
 
 # Local DB + runtime
-tickets.db
 *.db
 gunicorn.ctl
 *.log

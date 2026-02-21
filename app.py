@@ -22,7 +22,7 @@ load_dotenv()
 
 app = Flask(__name__)
 
-DB_PATH = Path(os.getenv("DB_PATH", Path(__file__).with_name("tickets.db")))
+DB_PATH = Path(os.getenv("DB_PATH", "/var/lib/phone-services/requests.db"))
 BASE_URL = os.getenv("BASE_URL", "http://example.local")
 ADMIN_USERS = set(
     u.strip()
@@ -64,9 +64,8 @@ def current_actor() -> str:
     # Provided by nginx basic auth via proxy_set_header
     return request.headers.get("X-Remote-User") or "unknown"
 
-def _existing_columns(con, table_name: str) -> set[str]:
-    rows = con.execute(f"PRAGMA table_info({table_name})").fetchall()
-    # PRAGMA table_info: (cid, name, type, notnull, dflt_value, pk)
+def _existing_columns(con) -> set[str]:
+    rows = con.execute("PRAGMA table_info(requests)").fetchall()
     return {r[1] for r in rows}
 
 def init_db():
@@ -76,19 +75,23 @@ def init_db():
             CREATE TABLE IF NOT EXISTS requests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 created_at TEXT NOT NULL,
+                updated_at TEXT,
                 source_ip TEXT,
                 user_agent TEXT,
                 kind TEXT NOT NULL,
                 details TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'Pending'
+                status TEXT NOT NULL DEFAULT 'Pending',
+                approved_by TEXT,
+                approved_at TEXT,
+                completed_at TEXT,
+                rejected_reason TEXT
             )
             """
         )
         con.execute("CREATE INDEX IF NOT EXISTS idx_requests_created ON requests(created_at)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status)")
 
-        # v0.2.0 schema upgrades (idempotent)
-        cols = _existing_columns(con, "requests")
+        cols = _existing_columns(con)
         if "updated_at" not in cols:
             con.execute("ALTER TABLE requests ADD COLUMN updated_at TEXT")
         if "approved_by" not in cols:
@@ -99,6 +102,8 @@ def init_db():
             con.execute("ALTER TABLE requests ADD COLUMN completed_at TEXT")
         if "rejected_reason" not in cols:
             con.execute("ALTER TABLE requests ADD COLUMN rejected_reason TEXT")
+
+        con.commit()
 
 init_db()
 
@@ -143,26 +148,28 @@ def _apply_transition(
         params: list[object] = [target_status, now]
 
         if target_status == STATUS_APPROVED:
-            fields += ["approved_by = ?", "approved_at = ?"]
-            params += [actor, now]
-
+            cur.execute(
+                "UPDATE requests SET status=?, updated_at=?, approved_by=?, approved_at=? WHERE id=?",
+                (target_status, now, actor, now, request_id),
+            )
         elif target_status == STATUS_REJECTED:
             rr = (reject_reason or "").strip()
             if not rr:
                 return False, "Reject requires a reason"
-            fields += ["rejected_reason = ?"]
-            params += [rr]
-
+            cur.execute(
+                "UPDATE requests SET status=?, updated_at=?, rejected_reason=? WHERE id=?",
+                (target_status, now, rr, request_id),
+            )
         elif target_status == STATUS_COMPLETED:
-            fields += ["completed_at = ?"]
-            params += [now]
-
-        params.append(request_id)
-
-        cur.execute(
-            f"UPDATE requests SET {', '.join(fields)} WHERE id = ?",
-            params,
-        )
+            cur.execute(
+                "UPDATE requests SET status=?, updated_at=?, completed_at=? WHERE id=?",
+                (target_status, now, now, request_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE requests SET status=?, updated_at=? WHERE id=?",
+                (target_status, now, request_id),
+            )
 
     return True, "ok"
 
@@ -695,7 +702,6 @@ def post_reject_form(action_url: str) -> str:
         f"<form method='post' action='{h(action_url)}' class='inline-form'>"
         "<input type='text' name='reason' placeholder='Reject reason' required>"
         "<button type='submit'>Reject</button></form>"
-        "</form>"
     )
 
 

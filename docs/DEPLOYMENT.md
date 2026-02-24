@@ -1,135 +1,129 @@
 # Deployment Guide
 
-This document describes how to deploy the Cisco IP Phone Self-Service
-Framework using Nginx, Gunicorn, and systemd on a Linux host.
+This guide walks through deploying the Cisco IP Phone Self-Service application on a Linux host and integrating it with Cisco Unified Communications Manager (CUCM).
 
-------------------------------------------------------------------------
+---
 
-## 1. Install System Dependencies
+## 1. System Requirements
+
+### Supported OS
+
+- Debian 12+
+- Ubuntu 22.04+
+- Raspberry Pi OS (Bookworm/Trixie)
+
+### Required Software
+
+- Python 3.11+
+- Git
+- Nginx
+- Network access to CUCM
+- Static IP recommended
+
+---
+
+## 2. Install Dependencies
 
 ``` bash
 sudo apt update
-sudo apt install python3 python3-venv python3-pip nginx
+sudo apt install -y git python3 python3-venv python3-pip nginx apache2-utils
 ```
 
-------------------------------------------------------------------------
-
-## 2. Application Directory
-
-Application code should reside in:
-
-``` file
-/opt/phone-services
-```
-
-Create the directory and set ownership to your development user:
+Verify Python:
 
 ``` bash
-sudo mkdir -p /opt/phone-services
-sudo chown -R $USER:$USER /opt/phone-services
+python3 --version
 ```
 
-------------------------------------------------------------------------
+---
 
-## 3. Python Virtual Environment
+## 3. Clone the Repository
+
+Recommended install location:
+
+``` bash
+cd /opt
+sudo git clone https://github.com/saparj/cisco-ip-phone-selfservice.git phone-services
+cd phone-services
+```
+
+Keep code root-owned (recommended):
+
+``` bash
+sudo chown -R root:root /opt/phone-services
+sudo chmod -R 755 /opt/phone-services
+```
+
+---
+
+## 4. Create Python Virtual Environment
 
 ``` bash
 cd /opt/phone-services
 python3 -m venv .venv
 source .venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 deactivate
 ```
 
-------------------------------------------------------------------------
+---
 
-## 4. Environment Configuration
+## 5. Create Database Directory 
 
-Copy the example configuration file:
-
-``` bash
-cp .env.example .env
-```
-
-Edit `.env` as needed:
-
-``` ini
-BASE_URL=http://example.local
-DB_PATH=/var/lib/phone-services/requests.db
-```
-
-------------------------------------------------------------------------
-
-## 5. Create Service Account and Data Directory
-
-Create a dedicated non-login system user:
-
-``` bash
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin phone-services
-```
-
-Create the persistent data directory:
-
-``` bash
-sudo mkdir -p /var/lib/phone-services
-sudo chown phone-services:phone-services /var/lib/phone-services
-sudo chmod 750 /var/lib/phone-services
-```
-
-This directory stores the SQLite database file (requests.db).
-It must exist before the service is started.
-
-The database file itself is created automatically on first launch.
-
-The directory is persistent across reboots. The database file is not stored alongside application code.
-
-Application code lives in `/opt/phone-services`.
-
-------------------------------------------------------------------------
-
-## 5.1 Database Initialization and Migrations
-
-The application uses a SQLite database located at:
+The database path is:
 
 ``` file
 /var/lib/phone-services/requests.db
 ```
 
-The application performs additive schema migrations automatically at startup.
-
-On first launch, the database and required tables are created.
-On subsequent launches, missing columns are added if required
-(e.g., audit fields introduced in newer versions).
-
-Before upgrading between versions, it is recommended to back up
-the database file.
+Create the directory and set ownership to the service user:
 
 ``` bash
-sudo cp /var/lib/phone-services/requests.db \
-        /var/lib/phone-services/requests.db.bak.$(date +%F)
+sudo mkdir -p /var/lib/phone-services
+sudo chown -R www-data /var/lib/phone-services
+sudo chmod -R 750 /var/lib/phone-services
 ```
 
-------------------------------------------------------------------------
+Note: On Debian/Ubuntu-based systems, www-data is created automatically when installing Nginx.
 
-## 6. systemd Service Configuration
+Verify:
 
-File: `/etc/systemd/system/phone-services.service`
+``` bash
+id www-data
+```
+
+---
+
+## 6. Configure systemd Services
+
+Create the systemd unit file:
+
+``` bash
+sudo nano /etc/systemd/system/phone-services.service
+```
+
+Paste (edit BASE_URL and ADMIN_USERS):
 
 ``` ini
 [Unit]
-Description=Cisco IP Phone Self-Service (Flask/Gunicorn)
+Description=UC Self-Service (Flask/Gunicorn)
 After=network.target
 
 [Service]
-User=phone-services
+User=www-data
+Group=www-data
 WorkingDirectory=/opt/phone-services
-Environment="PATH=/opt/phone-services/.venv/bin"
 
-# Create /run/phone-services at service start (tmpfs; recreated on reboot)
+# Runtime configuration (edit these)
+Environment=BASE_URL=http://10.10.10.10
+Environment=ADMIN_USERS=xadmin
+# Environment=ADMIN_USERS=xadmin1,xadmin2,xadmin3
+
+# Create /run/phone-services on start (tmpfs under /run)
 RuntimeDirectory=phone-services
-RuntimeDirectoryMode=0750
+RuntimeDirectoryMode=0755
 
-# Gunicorn 25.x may create a control socket; place it in /run with proper perms
 ExecStart=/opt/phone-services/.venv/bin/gunicorn --control-socket /run/phone-services/gunicorn.ctl -w 2 -b 127.0.0.1:8000 app:app
 
 Restart=always
@@ -147,22 +141,36 @@ sudo systemctl enable phone-services
 sudo systemctl start phone-services
 ```
 
-------------------------------------------------------------------------
+Check status:
 
-## 7. Nginx Reverse Proxy Configuration
+``` bash
+sudo systemctl status phone-services --no-pager
+```
 
-Create the site config file:
+Verify runtime directory exists:
+
+``` bash
+ls -la /run/phone-services
+```
+
+---
+
+## 7. Configure Nginx Reverse Proxy
+
+Create Nginx site config:
 
 ``` bash
 sudo nano /etc/nginx/sites-available/phone-services
 ```
 
-Paste the server{...} block into that file:
+Paste (edit server_name):
 
 ``` conf
 server {
     listen 80;
     server_name _;
+    # server_name 10.10.10.10;
+    # server_name uc.selfservice.lab.local;
 
     # Basic hardening
     server_tokens off;
@@ -176,8 +184,6 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-
-        # Phones are sensitive to caching sometimes
         add_header Cache-Control "no-store";
     }
 
@@ -202,7 +208,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
     }
 
-    # If you want everything else to 404:
+    # Everything else - 404:
     location / {
         return 404;
     }
@@ -225,66 +231,152 @@ Validate and reload Nginx:
 
 ``` bash
 sudo nginx -t
-sudo systemctl reload nginx
+sudo systemctl restart nginx
 ```
 
-------------------------------------------------------------------------
+---
 
-## 7.1 Configure Admin Authentication
+## 8. Configure Admin Credentials (Nginx Basic Auth)
 
-Administrative endpoints are protected using Nginx Basic Authentication.
-
-Install htpasswd utility:
+Create the htpasswd file and an admin user (must match ADMIN_USERS in systemd):
 
 ``` bash
-sudo apt install apache2-utils
+sudo htpasswd -c /etc/nginx/.htpasswd-phone-services xadmin
+sudo systemctl restart nginx
 ```
 
-Create credential file:
+If you need to add another user later:
 
 ``` bash
-sudo htpasswd -c /etc/nginx/.htpasswd-phone-services admin
+sudo htpasswd /etc/nginx/.htpasswd-phone-services anotheradmin
+sudo systemctl restart nginx
 ```
 
-Set allowed administrators in environment:
+Then update systemd 'ADMIN_USERS=' accordingly and restart the service.
 
-``` file
-/opt/phone-services/.env
-ADMIN_USERS=admin,john,etc.
-```
+---
 
-Reload Nginx:
+## 9. Validate the Deployment
+
+Health endpoint:
 
 ``` bash
-sudo nginx -t
-sudo systemctl reload nginx
+curl http://localhost/health
 ```
 
-The authenticated username is forwarded to the application
-via the X-Remote-User header and recorded in audit fields.
+Admin portal (from web browser; will prompt for credentials):
 
-------------------------------------------------------------------------
+``` code
+http://10.10.10.10/admin/dashboard
+```
 
-## 8. Verification
-
-Check service status:
+Phone menu endpoint (should return Cisco IP Phone XML):
 
 ``` bash
-sudo systemctl status phone-services --no-pager
+curl http://10.10.10.10/phone/menu
 ```
 
-Test locally:
+---
+
+## 10. Configure CUCM Phone Service
+
+### Add Phone Service
+
+CUCM Administration:
+
+Device -> Device Settings -> Phone Services -> Add New
+
+Set:
+
+- Service Name: Services
+- Service URL:
+
+``` code
+http://10.10.10.10/phone/menu
+```
+
+- Service Type: XML Service
+- Enable: Checked
+
+Save.
+
+### Subscribe Phones
+
+Per-phone:
+
+Device -> Phone -> select phone -> Related Links: Subscribe/Unsubscribe Services -> Add New -> Services -> Save -> Reset phone
+
+---
+
+## 11. Test on a Phone
+
+On the phone:
+
+Applications -> Services
+
+Submit a request. Confirm it appears in:
+
+``` code
+http://10.10.10.10/admin/dashboard
+```
+
+---
+
+## 12. Troubleshooting
+
+Service logs:
 
 ``` bash
-curl http://127.0.0.1:8000/phone/menu
-curl http://127.0.0.1:8000/health
+sudo journalctl -u phone-services -n 80 --no-pager
 ```
 
-------------------------------------------------------------------------
+Nginx error log:
 
-## Notes
+``` bash
+sudo tail -f /var/log/nginx/error.log
+```
 
--   Service runs under a dedicated non-root account.
--   Gunicorn binds to localhost only (`127.0.0.1`).
--   Nginx handles external HTTP access.
--   Application state is separated from application code.
+Restart services:
+
+``` bash
+sudo systemctl restart phone-services
+sudo systemctl restart nginx
+```
+
+Verify DB exists:
+
+``` bash
+ls -la /var/lib/phone-services/requests.db
+```
+
+Inspect schema:
+
+``` bash
+sqlite3 /var/lib/phone-services/requests.db "PRAGMA table_info(requests);"
+```
+
+---
+
+## 13. Upgrade Procedure
+
+Update code:
+
+``` bash
+cd /opt/phone-services
+sudo git pull
+sudo systemctl restart phone-services
+```
+
+---
+
+## Deployment Complete
+
+You now have:
+- UC Self-Service Cisco IP Phone XML service
+- Admin dashboard protected by Nginx Basic Auth
+- Flask allowlist authorization ('ADMIN_USERS')
+- Gunicorn bound to localhost only
+- SQLite persistent storage under /var/lib
+
+---
+

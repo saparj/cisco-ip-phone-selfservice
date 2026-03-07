@@ -143,10 +143,6 @@ def _apply_transition(
         if not _can_transition(current, target_status):
             return False, f"Invalid transition: {current} -> {target_status}"
 
-        # Build the update dynamically so we only set relevant audit fields
-        fields = ["status = ?", "updated_at = ?"]
-        params: list[object] = [target_status, now]
-
         if target_status == STATUS_APPROVED:
             cur.execute(
                 "UPDATE requests SET status=?, updated_at=?, approved_by=?, approved_at=? WHERE id=?",

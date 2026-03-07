@@ -2,53 +2,48 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in this project, please report
-it responsibly.
+If you discover a security vulnerability, please report it responsibly.
 
--   Do not open a public GitHub issue for security-sensitive findings.
--   Instead, report the issue via direct contact through GitHub or
-    repository owner contact methods.
+- Do not open a public GitHub issue for security-sensitive findings.
+- Report via direct contact through GitHub or repository owner contact methods.
 
-Please include:
+Include:
 
--   A clear description of the vulnerability
--   Steps to reproduce (if applicable)
--   Impact assessment (if known)
--   Suggested mitigation (optional)
+- Description of the vulnerability
+- Steps to reproduce (if applicable)
+- Impact assessment (if known)
+- Suggested mitigation (optional)
 
 Reports will be reviewed and acknowledged as promptly as possible.
 
-------------------------------------------------------------------------
+---
 
 ## Supported Versions
 
-This project is currently in early development.
+Only the latest version on the `main` branch is supported.
 
-Only the latest published version on the `main` branch is considered
-supported.
+Older commits and experimental branches may not receive security updates.
 
-Older commits or experimental branches may not receive security updates.
-
-------------------------------------------------------------------------
+---
 
 ## Scope
 
-This project is a reference implementation of a Cisco IP Phone XML
-self-service workflow framework.
+This application is currently in lab validation. Production deployment
+requires additional controls:
 
-It is not intended for production deployment without:
+- Authentication and authorization hardening
+- Reverse proxy configuration review
+- TLS termination
+- Database access controls
+- Network segmentation
+- Operational monitoring
 
--   Proper authentication and authorization controls
--   Reverse proxy hardening
--   Secure database configuration
--   Network segmentation
--   Operational monitoring
+Deployment guidance is provided in `docs/DEPLOYMENT.md` and
+`docs/PRODUCTION_READINESS.md`.
 
-Deployment guidance is provided in the `docs/` directory.
-
-------------------------------------------------------------------------
+---
 
 ## Responsible Disclosure
 
-Please allow reasonable time for review and remediation before public
-disclosure of any vulnerability.
+Please allow reasonable time for review and remediation before
+public disclosure of any vulnerability.

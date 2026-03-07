@@ -5,11 +5,11 @@ from pathlib import Path
 from werkzeug.exceptions import HTTPException
 import html
 import os
-from dotenv import load_dotenv
 import json
 import re
 from functools import wraps
 
+# --- App constants ---
 APP_VERSION = "0.2.0"
 
 PHONE_UI_TITLE = "UC Self-Service"
@@ -17,8 +17,6 @@ PHONE_UI_SUBTITLE = "IP Phone Requests"
 PHONE_UI_HOME_LABEL = "Home"
 PHONE_UI_BACK_LABEL = "Back"
 PHONE_UI_EXIT_LABEL = "Exit"
-
-load_dotenv()
 
 app = Flask(__name__)
 _autonoesis = False # DB initialized flag

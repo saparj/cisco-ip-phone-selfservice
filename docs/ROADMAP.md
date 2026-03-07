@@ -1,48 +1,46 @@
 # Roadmap
 
-This project is in early development. Planned work is grouped by milestone.
+Planned work by milestone.
 
-## v0.3.0 (operations + admin usability)
+## v0.3.0 — Operations + Admin Usability
 
 - Install/upgrade script for automated deployment
-- Admin dashboard improvements:
-  - Filtering and pagination
-  - Request detail view
-- Loggin improvements + log rotation
+- Admin dashboard: filtering, pagination, request detail view
+- Application logging and log rotation
 - Backup and restore procedures
-- Optional data retention controls
+- Data retention controls
 
 ---
 
-## v0.4.0 (identity improvements)
+## v0.4.0 — Device Identity
 
-- Better device identification (hostname/device name vs IP)
-- Improved "My Requests behavior for shared networks
-- Enhanced request metadata capture
-
----
-
-## v0.5.0 (read-only CUCM integration)
-
-- CUCM lookups for validation (AXL)
-- Derive partition automatically from DN
-- Display current CUCM values for context
-- Secure credential handling
+- Identify phones by hostname/device name instead of IP
+- Improve "My Requests" behavior for shared/NAT networks
+- Capture additional request metadata (device model, firmware)
 
 ---
 
-## v1.0.0 (controlled execution)
+## v0.5.0 — Read-Only CUCM Integration
 
-- Execute approved requests against CUCM on completion
-- Robust failure handling and retry safety
-- Expanded audit/event logging
-- Production-ready workflows
+- AXL lookups to validate DN against CUCM
+- Derive partition from DN automatically
+- Display current CUCM configuration values for context
+- Secure credential handling for CUCM API access
 
 ---
 
-## Future (enterprise hardening)
+## v1.0.0 — Controlled Execution
 
-- External database support (e.g., PostgreSQL)
-- Reporting and export capabilities
-- Additional UC workflows (Unity, etc.)
-- Centralized logging/monitoring integration
+- Execute approved requests against CUCM on admin completion
+- Failure handling and retry safety
+- Expanded audit and event logging
+- Production-ready workflow validation
+
+---
+
+## Future — Enterprise Hardening
+
+- External database support (PostgreSQL)
+- Reporting and data export
+- Additional UC workflows (Unity Connection, etc.)
+- Centralized logging and monitoring integration

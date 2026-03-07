@@ -1,6 +1,6 @@
 from flask import Flask, Response, request, abort, redirect, url_for
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from werkzeug.exceptions import HTTPException
 import html
@@ -50,7 +50,7 @@ def _can_transition(current_status: str, target: str) -> bool:
     return target in ALLOWED_TRANSITIONS.get(current_status, set())
 
 def utc_now() -> str:
-    return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    return datetime.now(timezone.utc).isoformat(timespec="seconds") + "Z"
 
 def build_details_phone_name_update(dn: str, requested_name: str, why: str) -> dict:
     return {

@@ -22,7 +22,7 @@ load_dotenv()
 
 app = Flask(__name__)
 
-DB_PATH = Path("DB_PATH", "/var/lib/phone-services/requests.db")
+DB_PATH = Path(os.getenv("DB_PATH", "/var/lib/phone-services/requests.db"))
 BASE_URL = os.getenv("BASE_URL", "http://example.local")
 ADMIN_USERS = set(
     u.strip()

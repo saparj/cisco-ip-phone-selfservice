@@ -231,7 +231,7 @@ def phone_softkeys(*, back_url: str | None = None) -> str:
 
 @app.errorhandler(Exception)
 def handle_all_errors(e):
-    # Always return Cisco XML for phone endpoints
+    # For phone endpoints, return XML
     if request.path.startswith("/phone/"):
         code = 500
         if isinstance(e, HTTPException):
@@ -240,11 +240,17 @@ def handle_all_errors(e):
         xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <CiscoIPPhoneText>
   <Title>Error</Title>
-  <Text>{x(f"{code} {type(e).__name__}: {str(e)}")}</Text>
+  <Text>Error {code}</Text>
 </CiscoIPPhoneText>"""
         return xml_response(xml), code
 
-    # For non-phone endpoints, return normal HTTP errors without recursion
+    # For admin endpoints, return detailed HTTP error
+    if request.path.startswith("/admin/"):
+        if isinstance(e, HTTPException):
+            return e
+        return f"500 {type(e).__name__}: {str(e)}", 500
+
+    # For other endpoints, return generic HTTP error
     if isinstance(e, HTTPException):
         return e  # lets Flask render the correct status code
     return "Internal Server Error", 500

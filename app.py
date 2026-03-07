@@ -21,6 +21,7 @@ PHONE_UI_EXIT_LABEL = "Exit"
 load_dotenv()
 
 app = Flask(__name__)
+_autonoesis = False # DB initialized flag
 
 DB_PATH = Path(os.getenv("DB_PATH", "/var/lib/phone-services/requests.db"))
 BASE_URL = os.getenv("BASE_URL", "http://example.local")
@@ -105,7 +106,13 @@ def init_db():
 
         con.commit()
 
-init_db()
+# Check if DB has been initialized before an incoming HTTP request, if not, initialize it
+@app.before_request
+def _ensure_db():
+    global _autonoesis
+    if not _autonoesis:
+        init_db()
+        _autonoesis = True
 
 
 def _apply_transition(

@@ -1,6 +1,6 @@
 # Deployment Guide
 
-This guide walks through deploying the Cisco IP Phone Self-Service application on a Linux host and integrating it with Cisco Unified Communications Manager (CUCM).
+Deploy the UC Self-Service application on a Linux host with Nginx and CUCM integration.
 
 ---
 
@@ -69,7 +69,7 @@ deactivate
 
 ---
 
-## 5. Create Database Directory 
+## 5. Create Database Directory
 
 The database path is:
 
@@ -95,7 +95,7 @@ id www-data
 
 ---
 
-## 6. Configure systemd Services
+## 6. Configure systemd Service
 
 Create the systemd unit file:
 
@@ -245,14 +245,14 @@ sudo htpasswd -c /etc/nginx/.htpasswd-phone-services xadmin
 sudo systemctl restart nginx
 ```
 
-If you need to add another user later:
+To add another user later:
 
 ``` bash
 sudo htpasswd /etc/nginx/.htpasswd-phone-services anotheradmin
 sudo systemctl restart nginx
 ```
 
-Then update systemd 'ADMIN_USERS=' accordingly and restart the service.
+Then update `ADMIN_USERS` in the systemd unit and restart the service.
 
 ---
 
@@ -266,7 +266,7 @@ curl http://localhost/health
 
 Admin portal (from web browser; will prompt for credentials):
 
-``` code
+```
 http://10.10.10.10/admin/dashboard
 ```
 
@@ -284,17 +284,12 @@ curl http://10.10.10.10/phone/menu
 
 CUCM Administration:
 
-Device -> Device Settings -> Phone Services -> Add New
+Device → Device Settings → Phone Services → Add New
 
 Set:
 
 - Service Name: Services
-- Service URL:
-
-``` code
-http://10.10.10.10/phone/menu
-```
-
+- Service URL: `http://10.10.10.10/phone/menu`
 - Service Type: XML Service
 - Enable: Checked
 
@@ -304,7 +299,7 @@ Save.
 
 Per-phone:
 
-Device -> Phone -> select phone -> Related Links: Subscribe/Unsubscribe Services -> Add New -> Services -> Save -> Reset phone
+Device → Phone → select phone → Related Links: Subscribe/Unsubscribe Services → Add New → Services → Save → Reset phone
 
 ---
 
@@ -312,11 +307,11 @@ Device -> Phone -> select phone -> Related Links: Subscribe/Unsubscribe Services
 
 On the phone:
 
-Applications -> Services
+Applications → Services
 
-Submit a request. Confirm it appears in:
+Submit a request. Confirm it appears in the admin dashboard:
 
-``` code
+```
 http://10.10.10.10/admin/dashboard
 ```
 
@@ -359,24 +354,8 @@ sqlite3 /var/lib/phone-services/requests.db "PRAGMA table_info(requests);"
 
 ## 13. Upgrade Procedure
 
-Update code:
-
 ``` bash
 cd /opt/phone-services
 sudo git pull
 sudo systemctl restart phone-services
 ```
-
----
-
-## Deployment Complete
-
-You now have:
-- UC Self-Service Cisco IP Phone XML service
-- Admin dashboard protected by Nginx Basic Auth
-- Flask allowlist authorization ('ADMIN_USERS')
-- Gunicorn bound to localhost only
-- SQLite persistent storage under /var/lib
-
----
-

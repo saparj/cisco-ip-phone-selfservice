@@ -219,6 +219,8 @@ def phone_softkeys(*, back_url: str | None = None) -> str:
   </SoftKeyItem>""")
     pos += 1
 
+    # The exit button is hardcoded because I always want it in the same spot
+    # Not every menu has a back button
     keys.append(f"""  <SoftKeyItem>
     <Name>{PHONE_UI_EXIT_LABEL}</Name>
     <URL>{BASE_URL}/phone/quit</URL>

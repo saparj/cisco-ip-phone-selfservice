@@ -1,6 +1,6 @@
 from flask import Flask, Response, request, abort, redirect, url_for
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from werkzeug.exceptions import HTTPException
 import html
@@ -21,6 +21,7 @@ PHONE_UI_EXIT_LABEL = "Exit"
 load_dotenv()
 
 app = Flask(__name__)
+_autonoesis = False # DB initialized flag
 
 DB_PATH = Path(os.getenv("DB_PATH", "/var/lib/phone-services/requests.db"))
 BASE_URL = os.getenv("BASE_URL", "http://example.local")
@@ -50,7 +51,7 @@ def _can_transition(current_status: str, target: str) -> bool:
     return target in ALLOWED_TRANSITIONS.get(current_status, set())
 
 def utc_now() -> str:
-    return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    return datetime.now(timezone.utc).isoformat(timespec="seconds") + "Z"
 
 def build_details_phone_name_update(dn: str, requested_name: str, why: str) -> dict:
     return {
@@ -105,7 +106,13 @@ def init_db():
 
         con.commit()
 
-init_db()
+# Check if DB has been initialized before an incoming HTTP request, if not, initialize it
+@app.before_request
+def _ensure_db():
+    global _autonoesis
+    if not _autonoesis:
+        init_db()
+        _autonoesis = True
 
 
 def _apply_transition(
@@ -142,10 +149,6 @@ def _apply_transition(
 
         if not _can_transition(current, target_status):
             return False, f"Invalid transition: {current} -> {target_status}"
-
-        # Build the update dynamically so we only set relevant audit fields
-        fields = ["status = ?", "updated_at = ?"]
-        params: list[object] = [target_status, now]
 
         if target_status == STATUS_APPROVED:
             cur.execute(
@@ -216,6 +219,8 @@ def phone_softkeys(*, back_url: str | None = None) -> str:
   </SoftKeyItem>""")
     pos += 1
 
+    # The exit button is hardcoded because I always want it in the same spot
+    # Not every menu has a back button
     keys.append(f"""  <SoftKeyItem>
     <Name>{PHONE_UI_EXIT_LABEL}</Name>
     <URL>{BASE_URL}/phone/quit</URL>
@@ -226,7 +231,7 @@ def phone_softkeys(*, back_url: str | None = None) -> str:
 
 @app.errorhandler(Exception)
 def handle_all_errors(e):
-    # Always return Cisco XML for phone endpoints
+    # For phone endpoints, return XML
     if request.path.startswith("/phone/"):
         code = 500
         if isinstance(e, HTTPException):
@@ -235,11 +240,17 @@ def handle_all_errors(e):
         xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <CiscoIPPhoneText>
   <Title>Error</Title>
-  <Text>{x(f"{code} {type(e).__name__}: {str(e)}")}</Text>
+  <Text>Error {code}</Text>
 </CiscoIPPhoneText>"""
         return xml_response(xml), code
 
-    # For non-phone endpoints, return normal HTTP errors without recursion
+    # For admin endpoints, return detailed HTTP error
+    if request.path.startswith("/admin/"):
+        if isinstance(e, HTTPException):
+            return e
+        return f"500 {type(e).__name__}: {str(e)}", 500
+
+    # For other endpoints, return generic HTTP error
     if isinstance(e, HTTPException):
         return e  # lets Flask render the correct status code
     return "Internal Server Error", 500

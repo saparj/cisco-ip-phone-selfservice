@@ -23,19 +23,21 @@ _autonoesis = False # DB initialized flag
 
 DB_PATH = Path(os.getenv("DB_PATH", "/var/lib/phone-services/requests.db"))
 BASE_URL = os.getenv("BASE_URL", "http://example.local")
+# Admin usernames from env var, checked against X-Remote-User from nginx
 ADMIN_USERS = set(
     u.strip()
     for u in os.getenv("ADMIN_USERS", "admin").split(",")
     if u.strip()
 )
 
-# --- Workflow states (v0.2.0) ---
+# --- Workflow state machine ---
 
 STATUS_PENDING = "Pending"
 STATUS_APPROVED = "Approved"
 STATUS_REJECTED = "Rejected"
 STATUS_COMPLETED = "Completed"
 
+# This dictionary enforces what valid states there are, and what each state is allowed to transition to
 ALLOWED_TRANSITIONS = {
     STATUS_PENDING: {STATUS_APPROVED, STATUS_REJECTED},
     STATUS_APPROVED: {STATUS_COMPLETED},
@@ -51,6 +53,7 @@ def _can_transition(current_status: str, target: str) -> bool:
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds") + "Z"
 
+# JSON payload for details column of name update req; schema included for future structures
 def build_details_phone_name_update(dn: str, requested_name: str, why: str) -> dict:
     return {
         "schema_version": 1,
@@ -67,6 +70,7 @@ def _existing_columns(con) -> set[str]:
     rows = con.execute("PRAGMA table_info(requests)").fetchall()
     return {r[1] for r in rows}
 
+# Create DB and table if missing, migrate schema if columns were added
 def init_db():
     with sqlite3.connect(DB_PATH) as con:
         con.execute(
@@ -91,6 +95,7 @@ def init_db():
         con.execute("CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status)")
 
         cols = _existing_columns(con)
+        # Additive schema changes during v0.2
         if "updated_at" not in cols:
             con.execute("ALTER TABLE requests ADD COLUMN updated_at TEXT")
         if "approved_by" not in cols:
@@ -123,6 +128,7 @@ def _apply_transition(
     Returns (ok, message). Writes status + audit fields atomically.
     """
 
+    # Validate target status, request exists w/ valid status, and if transition is allowed
     if target_status not in VALID_STATUSES:
         return False, f"Invalid target status: {target_status}"
 
@@ -148,6 +154,7 @@ def _apply_transition(
         if not _can_transition(current, target_status):
             return False, f"Invalid transition: {current} -> {target_status}"
 
+        # Atomically update status and audit fields
         if target_status == STATUS_APPROVED:
             cur.execute(
                 "UPDATE requests SET status=?, updated_at=?, approved_by=?, approved_at=? WHERE id=?",
@@ -174,29 +181,23 @@ def _apply_transition(
 
     return True, "ok"
 
+# Must be authenticated via nginx and an allowed user in ADMIN_USERS
 def require_admin(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
         user = request.headers.get("X-Remote-User")
-
-        # Must be authenticated via Nginx
         if not user:
             abort(403)
-
-        # Must be an allowed admin
         if user not in ADMIN_USERS:
             abort(403)
-
         return f(*args, **kwargs)
-
     return wrapper
 
 def xml_response(xml: str) -> Response:
-    # Cisco phones can be picky; keep it simple.
     return Response(xml + "\n", content_type="text/xml")
 
+# Escape context for Cisco XML responses
 def x(text: str) -> str:
-    # XML-escape content
     return html.escape(text or "", quote=True)
 
 def phone_softkeys(*, back_url: str | None = None) -> str:
@@ -254,6 +255,7 @@ def handle_all_errors(e):
     return "Internal Server Error", 500
 
 
+# --- Phone endpoints (Cisco XML) ---
 @app.get("/phone/menu")
 def phone_menu():
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -307,7 +309,7 @@ def phone_phonename_info():
 
 @app.get("/phone/recent")
 def phone_recent():
-    # Show last 10 requests by source IP (simple lab identity)
+    # Show last 10 requests by source IP (future: fetch by hostname)
     source_ip = request.headers.get("X-Real-IP", request.remote_addr)
 
     with sqlite3.connect(DB_PATH) as con:
@@ -318,22 +320,19 @@ def phone_recent():
 
     items = []
     for rid, _, _, status, details_text in rows:
-        # Compact, readable summary. Avoid coupling too tightly to JSON structure.
         dn = ""
         try:
             d = json.loads(details_text or "{}")
+            # Parse details JSON with fallback for older schema structures
             dn = d.get("dn") or (d.get("request") or {}).get("dn") or ""
         except Exception:
             dn = ""
 
-        # Keep it short for phone screens
         label_bits = [f"#{rid}", status]
         if dn:
             label_bits.append(dn)
         label = " ".join(label_bits)
 
-        # MenuItem URL: keep it simple for v0.2.0
-        # For now, selecting an item shows a small detail screen.
         items.append(
             f"""  <MenuItem>
     <Name>{x(label)}</Name>
@@ -382,7 +381,6 @@ def phone_recent_detail(rid: int):
 </CiscoIPPhoneText>"""
         return xml_response(xml)
 
-    # Build a readable detail text with minimal coupling to JSON
     dn = rn = why = ""
     try:
         d = json.loads(row["details"] or "{}")
@@ -445,6 +443,7 @@ def phone_dnlabel():
     return xml_response(xml)
 
 
+# Validates user inputs then creates a new row in db with request details
 @app.route("/phone/submit_dnlabel", methods=["GET", "POST"])
 def phone_submit_dnlabel():
     MAX_NAME_LEN = 32  # arbitrary limit to keep details reasonably sized
@@ -452,9 +451,9 @@ def phone_submit_dnlabel():
 
     dn_patterns = [
         r"^1[2-9]\d{2}[2-9]\d{6}$", # Country code + 10 digit number
-        r"^[2-9]\d{2}[2-9]\d{6}$",   # 10 digit number
-        r"^[2-9]\d{6}$",             # 7 digit number
-        r"^\d{4}$",               # 4 digit short extension
+        r"^[2-9]\d{2}[2-9]\d{6}$",  # 10 digit number
+        r"^[2-9]\d{6}$",            # 7 digit number
+        r"^\d{4}$",                 # 4 digit extension
     ]
 
     dn = (request.values.get("dn") or "").strip()
@@ -493,6 +492,7 @@ def phone_submit_dnlabel():
 </CiscoIPPhoneText>"""
         return xml_response(xml)
 
+    # Tries nginx-set header first, if absent falls back to raw connection IP
     source_ip = request.headers.get("X-Real-IP", request.remote_addr)
     user_agent = request.headers.get("User-Agent", "")
 
@@ -665,6 +665,7 @@ def admin_css() -> str:
 
 
 # --- Admin HTML helpers (no template engine; escape explicitly) ---
+# Escape context for HTML in admin dashboard
 def h(s: object) -> str:
     """Escape text for safe insertion into HTML."""
     return html.escape("" if s is None else str(s), quote=True)
@@ -714,6 +715,7 @@ def post_reject_form(action_url: str) -> str:
     )
 
 
+# --- Admin endpoints (HTML) ---
 @app.get("/admin/dashboard")
 @require_admin
 def admin_dashboard():
@@ -731,8 +733,9 @@ def admin_dashboard():
             """
         ).fetchall()
 
+    # Compact display of request details for the dashboard table
+    # Defined here because only this route needs it
     def summary(details_text: str) -> str:
-        # details is JSON-in-TEXT; show a compact summary without coupling too hard to schema
         try:
             d = json.loads(details_text or "{}")
             dn = d.get("dn") or (d.get("request") or {}).get("dn")
@@ -758,7 +761,7 @@ def admin_dashboard():
             bits.append(f"rejected_reason={r['rejected_reason']}")
         if r["completed_at"]:
             bits.append(f"completed_at={r['completed_at']}")
-        # Escape once when rendering; use <br> for readability.
+        # Escape once when rendering; use <br> for readability
         if not bits:
             return "—"
         return "<br>".join(h(b) for b in bits)
@@ -828,7 +831,7 @@ def admin_dashboard():
 @app.get("/admin/health")
 @require_admin
 def admin_health():
-    # Mirror /health data, but render it as an admin-friendly page.
+    # Mirror /health data, but render it as an admin-friendly page
     status = "ok"
     db_status = "ok"
     try:
@@ -886,6 +889,7 @@ def admin_health():
 @app.get("/admin/list")
 @require_admin
 def admin_list():
+    # Plain text table view for quick terminal/curl access
     with sqlite3.connect(DB_PATH) as con:
         con.row_factory = sqlite3.Row
         rows = con.execute(
@@ -965,7 +969,8 @@ def admin_complete(rid: int):
     )
     return redirect(url_for("admin_dashboard"))
 
-
+# --- System endpoints (JSON, no auth) ---
+# Unauthenticated health check for monitoring and load balancers
 @app.get("/health")
 def health():
     status = "ok"

@@ -17,6 +17,7 @@ Planned work by milestone.
 - Identify phones by hostname/device name instead of IP
 - Improve "My Requests" behavior for shared/NAT networks
 - Capture additional request metadata (device model, firmware)
+- Automated test suite (pytest + Flask test client)
 
 ---
 

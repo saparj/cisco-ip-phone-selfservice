@@ -4,45 +4,47 @@
 ![Platform](https://img.shields.io/badge/platform-Cisco%20IP%20Phones-lightgrey)
 ![Version](https://img.shields.io/badge/version-0.2.0-blue)
 
-# UC Self-Service — Cisco IP Phone Framework
+# UC Self-Service — Cisco IP Phone Services
 
-A lightweight Flask-based framework for building Cisco IP Phone XML self-service workflows delivered directly to desk phones.
+Flask application that enables end users to submit administrative
+requests directly from Cisco IP desk phones. Requests are tracked,
+reviewed, and approved by administrators through a web-based dashboard.
 
-This project demonstrates how structured Unified Communications (UC) request workflows can be initiated from Cisco IP phones and processed through a secure web-based administrative interface.
+Designed for Cisco UC environments running CUCM. Currently in lab
+validation with production deployment as a target.
 
 ---
 
-## Included Workflow (v0.2.0)
+## Capabilities (v0.2.0)
 
-- Phone display name update request
-- Per-phone request history
-- Request detail view
-- Administrator dashboard with approval workflow
-- Structured audit trail and lifecycle management
-- Reverse proxy + Gunicorn deployment model
+- Phone display name update request workflow
+- Per-phone request history and detail view
+- Admin dashboard with approval workflow (Approve / Reject / Complete)
+- Audit trail with status tracking and actor attribution
+- Structured request lifecycle with validated state transitions
+- Deployment model suitable for standalone or infrastructure-integrated hosts
 
 ---
 
 ## Architecture
 
-``` code
+```
 Cisco IP Phones
-→ Nginx (authentication + reverse proxy)
-→ Gunicorn (WSGI)
-→ Flask application
-→ SQLite database
+→ Nginx (reverse proxy + authentication)
+→ Gunicorn (WSGI, localhost only)
+→ Flask (application logic)
+→ SQLite (request storage)
 ```
 
 ---
 
-## Design Goals
+## Design Principles
 
-- Minimal external dependencies
-- Clear separation of proxy and application responsibilities
-- Production-compatible service model (systemd + Gunicorn)
-- Safe configuration via environment variables
-- Extensible foundation for additional UC workflows
-- Safe operation behind a reverse proxy
+- Minimal dependencies — runs on a single host with no external services
+- Separation of responsibilities — Nginx handles auth, Flask handles logic
+- Environment-driven configuration — no credentials in code
+- Controlled workflow — all state changes validated through a single transition function
+- Incremental development — request collection first, automation later
 
 ---
 
@@ -50,7 +52,7 @@ Cisco IP Phones
 
 ### Service Menu
 
-Users launch UC Self-Service -> Requests from the phone's Services menu.
+Users launch UC Self-Service from the phone's Services menu.
 
 ![Phone menu](docs/screenshots/v0.2.0/01-phone-menu.png)
 
@@ -86,13 +88,7 @@ Users can review their most recent submissions from the same phone/IP.
 
 ### Request Details
 
-Detailed information includes:
-
-- Request ID
-- Status
-- DN and requested name
-- Justification
-- Timestamp
+Detailed view includes request ID, status, DN, requested name, justification, and timestamp.
 
 ![Phone details](docs/screenshots/v0.2.0/05-phone-details.png)
 
@@ -100,7 +96,7 @@ Detailed information includes:
 
 ### Physical Phone Example
 
-Cisco IP phone models such as the 8841 and 7841 support XML services used by this framework.
+Tested on Cisco 8841 and 7841 handsets.
 
 ![Phone 8841](docs/screenshots/v0.2.0/06-phone-8841.png)
 
@@ -112,9 +108,7 @@ Cisco IP phone models such as the 8841 and 7841 support XML services used by thi
 
 ### Admin Dashboard
 
-Administrators authenticate via Nginx Basic Auth and manage requests through a web interface.
-
-Features:
+Administrators authenticate via Nginx Basic Auth and manage requests through a web dashboard.
 
 - Recent request list (newest 50)
 - Color-coded status indicators
@@ -129,25 +123,24 @@ Features:
 
 ## Request Lifecycle
 
-All requests follow a strict state machine:
+All requests follow a validated state machine:
 
-``` code
-Pending -> Approved -> Completed
-Pending -> Rejected
+```
+Pending → Approved → Completed
+Pending → Rejected
 ```
 
-State transitions are validated and applied atomically.
+Transitions are enforced server-side. Invalid transitions are rejected.
 
 ---
 
-## Security Model
+## Security
 
-- Authentication handled by Nginx (Basic Auth)
-- Authorization enforced by Flask ('require_admin' allowlist)
-- Application bound to localhost behind reverse proxy
-- SQLite datastore for v0.2.0
-- Structured JSON request payloads with embedded metadata
-- Parameterized SQL queries used for database operations
+- Authentication: Nginx (Basic Auth)
+- Authorization: Flask admin allowlist
+- Network: Application bound to localhost behind reverse proxy
+- Data: Parameterized queries, structured JSON payloads
+- Audit: Status changes recorded with actor, timestamp, and reason
 
 ---
 
@@ -162,14 +155,20 @@ State transitions are validated and applied atomically.
 
 ## Roadmap
 
-Planned features and future work are tracked in the [Project Roadmap](docs/ROADMAP.md).
+Planned features and milestones are tracked in the [Project Roadmap](docs/ROADMAP.md).
 
-## Intended Use
+---
 
-This repository is provided as a lab/demo reference architecture for engineers building Cisco IP Phone based self-service tools or evaluating phone-driven workflows.
+## Status
+
+This project is in active development. Currently validated in a lab
+environment against Cisco 7841, 8841, and 9861 handsets.
+
+Not yet recommended for production use without additional hardening.
+See [Production Readiness](docs/PRODUCTION_READINESS.md) for current status.
 
 ---
 
 ## Security Policy
 
-Please review the [Security Policy](SECURITY.md) for vulnerability reporting guidelines.
+See [SECURITY.md](SECURITY.md) for vulnerability reporting guidelines.

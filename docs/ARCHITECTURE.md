@@ -1,7 +1,8 @@
-# Cisco IP Phone Services -- Architecture
+# Architecture
 
-## High-Level Architecture
+## Overview
 
+```
 Cisco IP Phones
     ↓ HTTP (CiscoIPPhone XML)
 Nginx (Reverse Proxy :80)
@@ -9,8 +10,9 @@ Nginx (Reverse Proxy :80)
 Gunicorn (Flask WSGI App :127.0.0.1:8000)
     ↓
 SQLite (requests.db)
+```
 
-------------------------------------------------------------------------
+---
 
 ## Components
 
@@ -24,85 +26,74 @@ SQLite (requests.db)
 ### 2. Nginx
 
 - Terminates inbound HTTP on port 80
-- Disables gzip for /phone/ endpoints (Cisco XML compatibility)
-- Proxies requests to Gunicorn
-- Prevents direct exposure of backend service
-- Adds X-Real-IP header for client tracking
+- Enforces Basic Auth on `/admin/` endpoints
+- Disables gzip for `/phone/` endpoints (Cisco XML compatibility)
+- Proxies requests to Gunicorn on localhost
+- Adds `X-Real-IP` header for client tracking
+- Adds `X-Remote-User` header for admin identity
 
 ### 3. Gunicorn
 
 - 2 worker processes
-- Bound to 127.0.0.1:8000
-- Runs under non-root user
-- Managed via systemd
-- Automatically restarts on failure
+- Bound to 127.0.0.1:8000 (not externally accessible)
+- Runs as `www-data` under systemd
+- Restarts automatically on failure
 
 ### 4. Flask Application
 
-Responsibilities:
+- Generates CiscoIPPhone XML responses for phone endpoints
+- Serves HTML admin dashboard
+- Validates input and enforces workflow state machine
+- Persists request data to SQLite
 
-- Generate CiscoIPPhone XML responses
-- Persist request data
-- Provide admin review endpoints
-- Handle validation and error conditions
+Key endpoints:
 
-Key Endpoints: - /phone/menu - /phone/phonename/info - /phone/dnlabel -
-/phone/submit_dnlabel - /phone/recent - /phone/quit - /admin/list - 
-/admin/approve/<id> - /admin/reject/<id> - /admin/complete/<id> - /health
+```
+/phone/menu, /phone/phonename/info, /phone/dnlabel
+/phone/submit_dnlabel, /phone/recent, /phone/quit
+/admin/dashboard, /admin/list, /admin/health
+/admin/approve/<id>, /admin/reject/<id>, /admin/complete/<id>
+/health
+```
 
 ### 5. SQLite Database
 
-- Local file: /var/lib/phone-services/requests.db
-- Stores:
-  - id
-  - created_at
-  - source_ip
-  - user_agent
-  - kind
-  - details
-  - status
-  - updated_at
-  - approved_by
-  - approved_at
-  - completed_at
-  - rejected_reason
+Location: `/var/lib/phone-services/requests.db`
 
-### 6. requests.details (Structured JSON)
+Single table (`requests`) stores:
 
-- 'requests.details' stores structured request data as JSON (serialized into a TEXT column).
-- This field contains:
-  - Request-specific fields (e.g., DN, requested display name, justification)
-  - Embedded requester metadata (e.g., source IP, user agent)
-  - A 'schema_version' field for future compatibility
-- Notes:
-  - DN remains user-supplied in v0.2.0
-  - Future versions may normalize this JSON into a relational schema
+- id, created_at, updated_at
+- source_ip, user_agent
+- kind, details (structured JSON), status
+- approved_by, approved_at, completed_at, rejected_reason
 
-------------------------------------------------------------------------
+### 6. Request Details (Structured JSON)
 
-## Data Flow -- Phone Name Update
+The `details` column stores request-specific data as JSON in a TEXT column:
 
-1. User selects "Request Phone Name Update"
-2. Phone loads Info screen
-3. User selects Continue
-4. Phone loads CiscoIPPhoneInput form
-5. User submits form
-6. Flask stores request (status=Pending)
-7. Confirmation screen displayed
-8. Admin reviews via /admin/list
+- Request fields (DN, requested display name, justification)
+- Requester metadata (source IP, user agent)
+- `schema_version` field for forward compatibility
 
-------------------------------------------------------------------------
+DN is user-supplied in v0.2.0. Future versions may validate against CUCM.
+
+---
+
+## Data Flow — Phone Name Update
+
+1. User selects "Request Phone Name Update" from phone menu
+2. Phone displays info screen, user selects Continue
+3. Phone displays input form (DN, name, justification)
+4. User submits form
+5. Flask validates input and stores request (status: Pending)
+6. Confirmation screen displayed on phone
+7. Admin reviews and acts via `/admin/dashboard`
+
+---
 
 ## Request Lifecycle
 
-Requests follow a validated state machine.
-
-Valid states:
-
-- Pending
-- Approved
-- Rejected
-- Completed
+Valid states: Pending, Approved, Rejected, Completed
 
 Allowed transitions:
 
@@ -110,39 +101,36 @@ Allowed transitions:
 - Pending → Rejected
 - Approved → Completed
 
-All other transitions are rejected by the application.
+All other transitions are rejected. Status changes are validated
+server-side through a single transition function and written
+atomically with audit metadata.
 
-Status changes are validated server-side and written atomically
-with audit metadata (updated_at and relevant audit fields).
+Audit fields recorded on transition:
 
-Audit fields:
+- `updated_at` — all transitions
+- `approved_by`, `approved_at` — on approval
+- `completed_at` — on completion
+- `rejected_reason` — on rejection (required)
 
-- updated_at
-- approved_by
-- approved_at
-- completed_at
-- rejected_reason
-
-------------------------------------------------------------------------
+---
 
 ## Security Model
 
-- Backend not exposed externally
-- Reverse proxy isolates app
-- No credentials stored in code
-- Local data storage (no external database exposure)
-- Controlled service restarts via systemd
-- Admin endpoints protected by Nginx Basic Authentication
-- Admin endpoints require valid username in ADMIN_USERS configuration
+- Nginx isolates the application from direct external access
+- Gunicorn bound to localhost only
+- Admin endpoints gated by Nginx Basic Auth and Flask allowlist
+- No credentials stored in code — environment variables only
+- Parameterized SQL for all database operations
+- Phone endpoints unauthenticated (identified by source IP)
 
-------------------------------------------------------------------------
+---
 
 ## Scaling Considerations
 
-For enterprise deployment:
+Current architecture is single-host with SQLite. For higher
+availability or larger deployments:
 
 - Replace SQLite with PostgreSQL
-- Add TLS (HTTPS)
-- Replace JSON-in-TEXT with normalized relational schema (PostgreSQL)
-- Add logging aggregation
-- Add health-check endpoint
+- Add TLS termination (Nginx or load balancer)
+- Normalize the JSON `details` column into relational tables
+- Add centralized logging

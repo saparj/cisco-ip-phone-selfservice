@@ -1,8 +1,6 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
-
-This project follows a simple semantic versioning approach.
+All notable changes to this project are documented in this file.
 
 ---
 
@@ -20,25 +18,24 @@ This project follows a simple semantic versioning approach.
   - approved_at
   - completed_at
   - rejected_reason
-- Phone UI: “My Requests” list and detail view
-- Softkey navigation improvements (Home / Back / Exit)
+- Phone UI: "My Requests" list and detail view
+- Softkey navigation (Home / Back / Exit)
 - Input validation for DN label requests
 - Dark-mode-aware admin styling
-- Documentation improvements and workflow screenshots
 
 ### Changed
 
 - Renamed database from `tickets.db` to `requests.db`
-- Refined branding to “UC Self-Service”
-- Improved admin dashboard layout and usability
+- Renamed branding to "UC Self-Service"
+- Improved admin dashboard layout
 - Standardized UTC timestamps
 - Replaced flat detail strings with structured JSON payloads
 
 ### Fixed
 
 - Cisco IP Phone XML compatibility issues (input screen limits)
-- HTML escaping issues in admin views
-- Removed unsafe SQL string construction
+- HTML escaping in admin views
+- Unsafe SQL string construction
 
 ### Security
 
